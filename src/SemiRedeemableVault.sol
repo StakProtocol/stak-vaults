@@ -8,36 +8,65 @@ import {IERC20} from "@openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin-contracts/utils/math/Math.sol";
 import {IERC20Metadata} from "@openzeppelin-contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {console} from "forge-std/src/Test.sol";
+
 
 /**
  * @title SemiRedeemableVault
- * @dev A simple ERC4626 vault implementation with ownership control
- * The total assets can be set externally by the owner, allowing the owner
- * to withdraw assets while maintaining the vault's accounting.
- * redeptions happens at the same price that the shares were minted at, until NAV redepmtions is enabled by the owner
- * after that, redemptions happens at the current NAV price and cannot go back to fair pricing.
- * the performance fee is calculated as a percentage of the profit and is paid to the treasury.
- * the performance rate is set by the owner and is a percentage of the profit.
- * the high water mark is the highest price per share that has been reached.
- * the treasury is the address that receives the performance fee.
- * the owner is the address that can set the total assets, enable NAV redemptions, and set the performance rate.
- * the vault is ERC4626 compliant and can be used as a standard ERC4626 vault.
- * [[ add info about vesting schedule ]]
+ * @dev A simple ERC4626 vault implementation with ownership control and vesting mechanics
+ *
+ * \=== REDEMPTION MECHANICS ===
+ * The vault operates in two distinct modes:
+ * 1. Fair Price Mode (default): Redemptions happen at the same price shares were minted at
+ * 2. NAV Mode: Redemptions happen at current Net Asset Value (NAV) price
+ *
+ * Once NAV redemptions are enabled by the owner, the vault cannot return to fair pricing mode.
+ *
+ * \=== VESTING SCHEDULE ===
+ * The vault implements a linear vesting schedule with three distinct phases:
+ *
+ * 1. PRE-VESTING (before vestingStart):
+ *    - All shares are fully redeemable at fair price
+ *    - Users can redeem 100% of their shares
+ *
+ * 2. VESTING PERIOD (vestingStart to vestingEnd):
+ *    - Redeemable shares decrease linearly over time
+ *    - Formula: redeemableShares = totalShares * (vestingEnd - currentTime) / (vestingEnd - vestingStart)
+ *    - Users can only redeem the calculated redeemable portion
+ *
+ * 3. POST-VESTING (after vestingEnd):
+ *    - IMPORTANT: Vesting-based redemptions are NO LONGER AVAILABLE (redeemableShares = 0)
+ *    - Users' shares are effectively locked until NAV redemptions are enabled
+ *    - This is the intended behavior to prevent post-vesting redemptions at stale fair prices
+ *    - Users must wait for the owner to enable NAV redemptions to access their funds
+ *
+ * \=== IMPORTANT NOTES ===
+ * - After vesting ends, users cannot redeem shares until NAV mode is enabled
+ * - This prevents redemptions at potentially outdated fair prices after the vesting period
+ * - The owner should enable NAV redemptions when appropriate to unlock user funds
+ * - Performance fees are calculated as a percentage of profit above the high water mark
+ * - The vault maintains individual user ledgers for fair price calculations
+ *
+ * \=== OWNER RESPONSIBILITIES ===
+ * - Set total assets to reflect true vault value
+ * - Enable NAV redemptions when post-vesting redemptions should be allowed
+ * - Manage performance fee collection through treasury
  */
 contract SemiRedeemableVault is ERC4626, Ownable {
     using Math for uint256;
     using SafeERC20 for IERC20;
 
-    uint256 private _totalAssets;
-    bool private _redeemsAtNav;
-    address private _treasury;
-    uint256 private _performanceRate;
-    uint256 private _vestingStart;
-    uint256 private _vestingEnd;
-    uint256 private _highWaterMark;
+    address immutable private _TREASURY;
+    uint256 immutable private _PERFORMANCE_RATE;
+    uint256 immutable private _VESTING_START;
+    uint256 immutable private _VESTING_END;
 
     uint256 private constant BPS = 10_000; // 100%
-    uint16 private constant MAX_PERFORMANCE_RATE = 5000; // 50 %
+    uint256 private constant MAX_PERFORMANCE_RATE = 5000; // 50 %
+
+    bool private _redeemsAtNav;
+    uint256 private _investedAssets;
+    uint256 private _highWaterMark;
 
     struct Ledger {
         uint256 assets;
@@ -53,7 +82,7 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     */
 
     event AssetsTaken(uint256 assets);
-    event TotalAssetsUpdated(uint256 newTotalAssets, uint256 performanceFee);
+    event InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
     event RedeemsAtNavEnabled();
 
     /* ========================================================================
@@ -61,11 +90,13 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     * =========================================================================
     */
 
-    error InvalidPerformanceRate(uint16 performanceRate);
+    error InvalidPerformanceRate(uint256 performanceRate);
     error InvalidTreasury(address treasury);
     error InvalidDecimals(uint8 sharesDecimals, uint8 assetsDecimals);
     error InvalidVestingSchedule(uint256 currentTime, uint256 vestingStart, uint256 vestingEnd);
-    error VestingAmountNotRedeemable(address owner, uint256 shares, uint256 availableShares);
+    /// @dev Thrown when user tries to redeem more shares than currently available through vesting
+    /// After vesting ends, availableShares becomes 0, effectively locking all shares until NAV redemptions are enabled
+    error VestingAmountNotRedeemable(address user, uint256 shares, uint256 availableShares);
 
     // ========================================================================
     // =============================== Constructor ============================
@@ -77,7 +108,7 @@ contract SemiRedeemableVault is ERC4626, Ownable {
         string memory symbol_,
         address owner_,
         address treasury_,
-        uint16 performanceRate_,
+        uint256 performanceRate_,
         uint256 vestingStart_,
         uint256 vestingEnd_
     ) ERC20(name_, symbol_) ERC4626(asset_) Ownable(owner_) {
@@ -101,10 +132,10 @@ contract SemiRedeemableVault is ERC4626, Ownable {
 
         _highWaterMark = 10 ** decimals();
 
-        _treasury = treasury_;
-        _performanceRate = performanceRate_;
-        _vestingStart = vestingStart_;
-        _vestingEnd = vestingEnd_;
+        _TREASURY = treasury_;
+        _PERFORMANCE_RATE = performanceRate_;
+        _VESTING_START = vestingStart_;
+        _VESTING_END = vestingEnd_;
     }
 
     // ========================================================================
@@ -112,31 +143,39 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     // ========================================================================
 
     function takeAssets(uint256 assets) external onlyOwner {
+        _investedAssets += assets;
         IERC20(asset()).safeTransfer(owner(), assets);
-
         emit AssetsTaken(assets);
     }
 
     /**
      * @dev Sets the total assets managed by the vault.
      * Can only be called by the owner.
-     * @param newTotalAssets The new total assets value
+     * @param newInvestedAssets The new invested assets value
      */
-    function updateTotalAssets(uint256 newTotalAssets) external onlyOwner {
-        _totalAssets = newTotalAssets;
+    function updateInvestedAssets(uint256 newInvestedAssets) external onlyOwner {
+        _investedAssets = newInvestedAssets;
         
         uint256 performanceFee = _calculatePerformanceFee();
 
         if (performanceFee > 0) {
-            IERC20(asset()).safeTransfer(_treasury, performanceFee);
+            IERC20(asset()).safeTransfer(_TREASURY, performanceFee);
         }
 
-        emit TotalAssetsUpdated(newTotalAssets, performanceFee);
+        emit InvestedAssetsUpdated(newInvestedAssets, performanceFee);
     }
 
     /**
-     * @dev Enables redemptions at NAV.
-     * Can only be called by the owner.
+     * @dev Enables redemptions at NAV (Net Asset Value).
+     *
+     * IMPORTANT: This function should be called by the owner when:
+     * 1. The vesting period has ended and users need access to their locked shares
+     * 2. The owner wants to switch from fair price to current NAV pricing
+     *
+     * Once enabled, users can redeem shares at current NAV regardless of vesting status.
+     * This is the primary mechanism to unlock shares after the vesting period ends.
+     *
+     * Can only be called by the owner and cannot be reversed.
      */
     function enableRedeemsAtNav() external onlyOwner {
         _redeemsAtNav = true;
@@ -153,7 +192,7 @@ contract SemiRedeemableVault is ERC4626, Ownable {
      * This can be set externally by the owner and may differ from the contract's balance.
      */
     function totalAssets() public view virtual override returns (uint256) {
-        return _totalAssets;
+        return super.totalAssets() + _investedAssets;
     }
 
     /**
@@ -169,8 +208,9 @@ contract SemiRedeemableVault is ERC4626, Ownable {
      * @return The utilization rate as a percentage in BPS (10000 = 100%)
      */
     function utilizationRate() public view returns (uint256) {
-        uint256 investedAssets = _totalAssets - IERC20(asset()).balanceOf(address(this));
-        return BPS.mulDiv(investedAssets, _totalAssets, Math.Rounding.Floor);
+        uint256 _totalAssets = totalAssets();
+        if (_totalAssets == 0) return 0;
+        return BPS.mulDiv(_investedAssets, _totalAssets, Math.Rounding.Floor);
     }
 
     /**
@@ -191,17 +231,32 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     }
     
     /**
-     * @dev Returns the redeemable shares of the user.
+     * @dev Returns the redeemable shares of the user based on the current vesting schedule.
+     *
+     * IMPORTANT: This function returns 0 after the vesting period ends, effectively
+     * locking all shares until NAV redemptions are enabled by the owner.
+     *
+     * Vesting phases:
+     * - Before vesting starts: Returns 100% of user's vesting shares
+     * - During vesting: Returns linearly decreasing amount based on time remaining
+     * - After vesting ends: Returns 0 (shares are locked until NAV mode is enabled)
+     *
      * @param user The address to query the redeemable shares for
-     * @return The redeemable shares
+     * @return The redeemable shares (0 if vesting period has ended)
      */
     function redeemableShares(address user) public view returns (uint256) {
         return vestingRate().mulDiv(_ledger[user].vesting, BPS, Math.Rounding.Floor);
     }
 
     /**
-     * @dev Returns the vesting rate of the vault.
-     * @return The vesting rate as a percentage in BPS (10000 = 100%)
+     * @dev Returns the current vesting rate of the vault.
+     *
+     * The vesting rate determines what percentage of vested shares are currently redeemable:
+     * - Before vesting starts: 10000 (100% - all shares redeemable)
+     * - During vesting: Decreases linearly from 10000 to 0
+     * - After vesting ends: 0 (0% - no shares redeemable via vesting)
+     *
+     * @return The vesting rate as a percentage in BPS (10000 = 100%, 0 = 0%)
      */
     function vestingRate() public view returns (uint256) {
         return _calculateVestingRate();
@@ -210,21 +265,21 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     /**
      * @dev Converts assets to shares.
      * @param assets The assets to convert
-     * @param owner The owner of the assets
+     * @param user The user of the assets
      * @return The shares
      */
-    function convertToShares(uint256 assets, address owner) public view returns (uint256) {
-        return _convertToShares(assets, owner, Math.Rounding.Floor);
+    function convertToShares(uint256 assets, address user) public view returns (uint256) {
+        return _convertToShares(assets, user, Math.Rounding.Floor);
     }
 
     /**
      * @dev Converts shares to assets.
      * @param shares The shares to convert
-     * @param owner The owner of the shares
+     * @param user The user of the shares
      * @return The assets
      */
-    function convertToAssets(uint256 shares, address owner) public view returns (uint256) {
-        return _convertToAssets(shares, owner, Math.Rounding.Floor);
+    function convertToAssets(uint256 shares, address user) public view returns (uint256) {
+        return _convertToAssets(shares, user, Math.Rounding.Floor);
     }
 
     // ========================================================================
@@ -275,34 +330,34 @@ contract SemiRedeemableVault is ERC4626, Ownable {
      * @dev Override redeem to check if redemptions are enabled.
      * @param shares The shares to redeem
      * @param receiver The receiver of the assets
-     * @param owner The owner of the shares
+     * @param user The user of the shares
      * @return The assets
      */
-    function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256) {
-        uint256 maxShares = maxRedeem(owner);
+    function redeem(uint256 shares, address receiver, address user) public virtual override returns (uint256) {
+        uint256 maxShares = maxRedeem(user);
         if (shares > maxShares) {
-            revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
+            revert ERC4626ExceededMaxRedeem(user, shares, maxShares);
         }
 
-        uint256 assets = _previewRedeem(shares, owner);
-        
+        uint256 assets = _previewRedeem(shares, user);
+
         if(!_redeemsAtNav) {
-            uint256 availableShares = redeemableShares(owner);
+            uint256 availableShares = redeemableShares(user);
             
             if(shares > availableShares) {
-                revert VestingAmountNotRedeemable(owner, shares, availableShares);
+                revert VestingAmountNotRedeemable(user, shares, availableShares);
             }
 
             // Update the ledger
-            _ledger[owner].assets -= assets;
-            _ledger[owner].shares -= shares;
+            _ledger[user].assets -= assets;
+            _ledger[user].shares -= shares;
 
-            if(block.timestamp < _vestingStart) {
-                _ledger[owner].vesting -= shares;
+            if(block.timestamp < _VESTING_START) {
+                _ledger[user].vesting -= shares;
             }
         }
         
-        _withdraw(_msgSender(), receiver, owner, assets, shares);
+        _withdraw(_msgSender(), receiver, user, assets, shares);
 
         return assets;
     }
@@ -311,35 +366,35 @@ contract SemiRedeemableVault is ERC4626, Ownable {
      * @dev Override withdraw to update the ledger.
      * @param assets The assets to withdraw
      * @param receiver The receiver of the shares
-     * @param owner The owner of the assets
+     * @param user The user of the assets
      * @return The shares
      */
-    function withdraw(uint256 assets, address receiver, address owner) public virtual override returns (uint256) {
-        uint256 maxAssets = maxWithdraw(owner);
+    function withdraw(uint256 assets, address receiver, address user) public virtual override returns (uint256) {
+        uint256 maxAssets = maxWithdraw(user);
         if (assets > maxAssets) {
-            revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
+            revert ERC4626ExceededMaxWithdraw(user, assets, maxAssets);
         }
 
-        uint256 shares = _previewWithdraw(assets, owner);
+        uint256 shares = _previewWithdraw(assets, user);
 
         if(!_redeemsAtNav) {
 
-            uint256 availableShares = redeemableShares(owner);
+            uint256 availableShares = redeemableShares(user);
             
             if(shares > availableShares) {
-                revert VestingAmountNotRedeemable(owner, shares, availableShares);
+                revert VestingAmountNotRedeemable(user, shares, availableShares);
             }
         
             // Update the ledger
-            _ledger[owner].assets -= assets;
-            _ledger[owner].shares -= shares;
+            _ledger[user].assets -= assets;
+            _ledger[user].shares -= shares;
 
-            if(block.timestamp < _vestingStart) {
-                _ledger[owner].vesting -= shares;
+            if(block.timestamp < _VESTING_START) {
+                _ledger[user].vesting -= shares;
             }
         }
         
-        _withdraw(_msgSender(), receiver, owner, assets, shares);
+        _withdraw(_msgSender(), receiver, user, assets, shares);
 
         return shares;
     }
@@ -369,53 +424,71 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     /**
      * @dev Preview the shares to withdraw per user
      * If redemptions are at NAV, return the shares (same as 4626)
-     * Otherwise, return the maximum between the shares and the shares of the owner (to prevent underflow)
+     * Otherwise, return the maximum between the shares and the shares of the user (to prevent underflow)
      * @param assets The assets to withdraw
-     * @param owner The owner of the assets
+     * @param user The user of the assets
      * @return The shares
      */
-    function _previewWithdraw(uint256 assets, address owner) private view returns (uint256) {
+    function _previewWithdraw(uint256 assets, address user) private view returns (uint256) {
         uint256 shares = _convertToShares(assets, Math.Rounding.Ceil);
         if(_redeemsAtNav) return shares;
-        return Math.max(shares, _convertToShares(assets, owner, Math.Rounding.Ceil));
+        return Math.min(shares, _convertToShares(assets, user, Math.Rounding.Ceil));
     }
 
     /**
      * @dev Preview the assets to redeem per user
      * If redemptions are at NAV, return the assets (same as 4626)
-     * Otherwise, return the minimum between the assets and the assets of the owner (to prevent underflow)
+     * Otherwise, return the minimum between the assets and the assets of the user (to prevent underflow)
      * @param shares The shares to redeem
-     * @param owner The owner of the shares
+     * @param user The user of the shares
      * @return The assets
      */
-    function _previewRedeem(uint256 shares, address owner) private view returns (uint256) {
-        uint256 assets = _convertToAssets(shares, owner, Math.Rounding.Floor);
+    function _previewRedeem(uint256 shares, address user) private view returns (uint256) {
+        uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
         if(_redeemsAtNav) return assets;
-        return Math.min(assets, _convertToAssets(shares, owner, Math.Rounding.Floor));
+        return Math.min(assets, _convertToAssets(shares, user, Math.Rounding.Floor));
     }
 
     /**
      * @dev Converts assets to shares per user using the ledger as a fair exchange rate
      * @param assets The assets to convert
-     * @param owner The owner of the assets
+     * @param user The user of the assets
      * @param rounding The rounding direction
      * @return The shares
      */ 
-    // TODO VERIFY: shares = 0 || assets = 0
-    function _convertToShares(uint256 assets, address owner, Math.Rounding rounding) private view returns (uint256) {
-        return assets.mulDiv(_ledger[owner].shares, _ledger[owner].assets, rounding);
+    function _convertToShares(
+        uint256 assets,
+        address user,
+        Math.Rounding rounding
+    ) private view returns (uint256) {
+        if (assets == 0) return 0;
+
+        uint256 userShares = _ledger[user].shares;
+        uint256 userAssets = _ledger[user].assets;
+
+        if (userShares == 0 || userAssets == 0) return 0;
+        return assets.mulDiv(userShares, userAssets, rounding);
     }
 
     /**
      * @dev Converts shares to assets per user using the ledger as a fair exchange rate
      * @param shares The shares to convert
-     * @param owner The owner of the shares
+     * @param user The user of the shares
      * @param rounding The rounding direction
      * @return The assets
      */
-     // TODO VERIFY: shares = 0 || assets = 0
-    function _convertToAssets(uint256 shares, address owner, Math.Rounding rounding) private view returns (uint256) {
-        return shares.mulDiv(_ledger[owner].assets, _ledger[owner].shares, rounding);
+    function _convertToAssets(
+        uint256 shares,
+        address user,
+        Math.Rounding rounding
+    ) private view returns (uint256) {
+        if (shares == 0) return 0;
+
+        uint256 userShares = _ledger[user].shares;
+        uint256 userAssets = _ledger[user].assets;
+
+        if (userShares == 0 || userAssets == 0) return 0;
+        return shares.mulDiv(userAssets, userShares, rounding);
     }
 
     /* ========================================================================
@@ -423,7 +496,7 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     * =========================================================================
     */
 
-     /// @dev Calculate the performance fee
+    /// @dev Calculate the performance fee
     /// @dev The performance is calculated as the difference between the current price per share and the high water mark
     /// @dev The performance fee is calculated as the product of the performance and the performance rate
     function _calculatePerformanceFee() internal returns (uint256 performanceFee) {
@@ -433,7 +506,7 @@ contract SemiRedeemableVault is ERC4626, Ownable {
             uint256 profitPerShare = pricePerShare - _highWaterMark;
             
             uint256 profit = profitPerShare.mulDiv(totalSupply(), 10 ** decimals(), Math.Rounding.Ceil);
-            performanceFee = profit.mulDiv(_performanceRate, BPS, Math.Rounding.Ceil);
+            performanceFee = profit.mulDiv(_PERFORMANCE_RATE, BPS, Math.Rounding.Ceil);
 
             _highWaterMark = pricePerShare;
         }
@@ -444,15 +517,29 @@ contract SemiRedeemableVault is ERC4626, Ownable {
     * =========================================================================
     */
 
+    /**
+     * @dev Calculates the current vesting rate based on the vesting schedule.
+     *
+     * This function implements the core vesting logic:
+     * 1. Pre-vesting: Returns 100% (BPS = 10000)
+     * 2. During vesting: Returns linearly decreasing rate
+     * 3. Post-vesting: Returns 0% - THIS LOCKS ALL SHARES
+     *
+     * The post-vesting behavior (returning 0) is intentional and prevents
+     * redemptions at potentially stale fair prices after the vesting period.
+     * Users must wait for NAV redemptions to be enabled to access their funds.
+     *
+     * @return The vesting rate in basis points (0-10000)
+     */
     function _calculateVestingRate() internal view returns (uint256) {
-        if (block.timestamp < _vestingStart) {
+        if (block.timestamp < _VESTING_START) {
             return BPS;
         }
 
-        if (block.timestamp > _vestingEnd) {
+        if (block.timestamp > _VESTING_END) {
             return 0;
         }
 
-        return BPS.mulDiv(_vestingEnd - block.timestamp, _vestingEnd - _vestingStart, Math.Rounding.Floor);
+        return BPS.mulDiv(_VESTING_END - block.timestamp, _VESTING_END - _VESTING_START, Math.Rounding.Floor);
     }
 }

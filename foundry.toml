@@ -2,6 +2,7 @@
 src = "src"
 out = "out"
 libs = ["lib", "dependencies"]
+solc = "0.8.24"
 
 [dependencies]
 forge-std = "1.12.0"

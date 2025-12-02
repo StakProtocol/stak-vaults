@@ -36,8 +36,7 @@ SemiRedeemableVault vault = new SemiRedeemableVault(
 
 ```solidity
 vault.setTotalAssets(newTotalAssets);
-vault.setRedeemsAtNav(true);  // NAV mode
-vault.setRedeemsAtNav(false); // Deposit price mode
+vault.setRedeemsAtNav();
 ```
 
 ## Testing
