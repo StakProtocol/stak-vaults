@@ -12,7 +12,7 @@ import {console} from "forge-std/src/Test.sol";
 
 
 /**
- * @title SemiRedeemableVault
+ * @title SemiRedeemable4626
  * @dev A simple ERC4626 vault implementation with ownership control and vesting mechanics
  *
  * \=== REDEMPTION MECHANICS ===
@@ -52,7 +52,7 @@ import {console} from "forge-std/src/Test.sol";
  * - Enable NAV redemptions when post-vesting redemptions should be allowed
  * - Manage performance fee collection through treasury
  */
-contract SemiRedeemableVault is ERC4626, Ownable {
+contract SemiRedeemable4626 is ERC4626, Ownable {
     using Math for uint256;
     using SafeERC20 for IERC20;
 

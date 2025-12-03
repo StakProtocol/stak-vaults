@@ -1,4 +1,4 @@
-# SemiRedeemableVault
+# SemiRedeemable4626
 
 An ERC-4626 vault with dual redemption modes and per-user deposit tracking.
 
@@ -24,7 +24,7 @@ forge build
 ### Deploy
 
 ```solidity
-SemiRedeemableVault vault = new SemiRedeemableVault(
+SemiRedeemable4626 vault = new SemiRedeemable4626(
     assetToken,
     "Vault Token",
     "VAULT",

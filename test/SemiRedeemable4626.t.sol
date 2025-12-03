@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/src/Test.sol";
-import {SemiRedeemableVault} from "../src/SemiRedeemableVault.sol";
+import {SemiRedeemable4626} from "../src/SemiRedeemable4626.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {IERC20} from "@openzeppelin-contracts/token/ERC20/IERC20.sol";
 
 
-contract SemiRedeemableVaultTest is Test {
-    SemiRedeemableVault public vault;
+contract SemiRedeemable4626Test is Test {
+    SemiRedeemable4626 public vault;
     MockERC20 public asset;
     
     address public owner = address(0x1);
@@ -35,7 +35,7 @@ contract SemiRedeemableVaultTest is Test {
         vestingEnd = block.timestamp + 30 days;
         
         vm.prank(owner);
-        vault = new SemiRedeemableVault(
+        vault = new SemiRedeemable4626(
             IERC20(address(asset)),
             "Vault Token",
             "VAULT",
@@ -67,12 +67,12 @@ contract SemiRedeemableVaultTest is Test {
     function test_Constructor_RevertWhen_InvalidPerformanceRate() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                SemiRedeemableVault.InvalidPerformanceRate.selector,
+                SemiRedeemable4626.InvalidPerformanceRate.selector,
                 MAX_PERFORMANCE_RATE + 1
             )
         );
         
-        new SemiRedeemableVault(
+        new SemiRedeemable4626(
             IERC20(address(asset)),
             "Vault Token",
             "VAULT",
@@ -87,12 +87,12 @@ contract SemiRedeemableVaultTest is Test {
     function test_Constructor_RevertWhen_InvalidTreasury() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                SemiRedeemableVault.InvalidTreasury.selector,
+                SemiRedeemable4626.InvalidTreasury.selector,
                 address(0)
             )
         );
         
-        new SemiRedeemableVault(
+        new SemiRedeemable4626(
             IERC20(address(asset)),
             "Vault Token",
             "VAULT",
@@ -107,14 +107,14 @@ contract SemiRedeemableVaultTest is Test {
     function test_Constructor_RevertWhen_InvalidVestingSchedule_StartInPast() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                SemiRedeemableVault.InvalidVestingSchedule.selector,
+                SemiRedeemable4626.InvalidVestingSchedule.selector,
                 block.timestamp,
                 block.timestamp - 1,
                 vestingEnd
             )
         );
         
-        new SemiRedeemableVault(
+        new SemiRedeemable4626(
             IERC20(address(asset)),
             "Vault Token",
             "VAULT",
@@ -129,14 +129,14 @@ contract SemiRedeemableVaultTest is Test {
     function test_Constructor_RevertWhen_InvalidVestingSchedule_EndBeforeStart() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                SemiRedeemableVault.InvalidVestingSchedule.selector,
+                SemiRedeemable4626.InvalidVestingSchedule.selector,
                 block.timestamp,
                 vestingStart,
                 vestingStart - 1
             )
         );
         
-        new SemiRedeemableVault(
+        new SemiRedeemable4626(
             IERC20(address(asset)),
             "Vault Token",
             "VAULT",
@@ -159,7 +159,7 @@ contract SemiRedeemableVaultTest is Test {
         MockERC20 asset6Decimals = new MockERC20("Asset6", "AST6", 6);
         
         // This should succeed because ERC4626 matches asset decimals
-        SemiRedeemableVault vault6 = new SemiRedeemableVault(
+        SemiRedeemable4626 vault6 = new SemiRedeemable4626(
             IERC20(address(asset6Decimals)),
             "Vault Token 6",
             "VAULT6",
@@ -489,7 +489,7 @@ contract SemiRedeemableVaultTest is Test {
         vm.startPrank(user1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                SemiRedeemableVault.VestingAmountNotRedeemable.selector,
+                SemiRedeemable4626.VestingAmountNotRedeemable.selector,
                 user1,
                 redeemable + 1,
                 redeemable
@@ -545,7 +545,7 @@ contract SemiRedeemableVaultTest is Test {
         vm.startPrank(user1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                SemiRedeemableVault.VestingAmountNotRedeemable.selector,
+                SemiRedeemable4626.VestingAmountNotRedeemable.selector,
                 user1,
                 500e18,
                 0

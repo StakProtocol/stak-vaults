@@ -1,8 +1,8 @@
-# Security Audit Report - SemiRedeemableVault
+# Security Audit Report - SemiRedeemable4626
 
 ## Executive Summary
 
-This document outlines critical vulnerabilities and attack vectors identified in the `SemiRedeemableVault` contract. All vulnerabilities have been verified with Proof of Concept (PoC) tests in `test/SemiRedeemableVaultExploits.t.sol`.
+This document outlines critical vulnerabilities and attack vectors identified in the `SemiRedeemable4626` contract. All vulnerabilities have been verified with Proof of Concept (PoC) tests in `test/SemiRedeemable4626Exploits.t.sol`.
 
 ## Critical Vulnerabilities
 
@@ -149,10 +149,10 @@ When user1 approves user2 to redeem shares, user2 should be able to redeem the s
 ## Testing
 
 All vulnerabilities have been verified with PoC tests in:
-- `test/SemiRedeemableVaultExploits.t.sol`
+- `test/SemiRedeemable4626Exploits.t.sol`
 
 Run tests with:
 ```bash
-forge test --match-contract SemiRedeemableVaultExploits -vv
+forge test --match-contract SemiRedeemable4626Exploits -vv
 ```
 
