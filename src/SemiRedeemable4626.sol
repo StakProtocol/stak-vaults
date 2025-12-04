@@ -54,10 +54,10 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
     using Math for uint256;
     using SafeERC20 for IERC20;
 
-    address immutable private _TREASURY;
-    uint256 immutable private _PERFORMANCE_RATE;
-    uint256 immutable private _VESTING_START;
-    uint256 immutable private _VESTING_END;
+    address private immutable _TREASURY;
+    uint256 private immutable _PERFORMANCE_RATE;
+    uint256 private immutable _VESTING_START;
+    uint256 private immutable _VESTING_END;
 
     uint256 private constant BPS = 10_000; // 100%
     uint256 private constant MAX_PERFORMANCE_RATE = 5000; // 50 %
@@ -110,7 +110,6 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
         uint256 vestingStart_,
         uint256 vestingEnd_
     ) ERC20(name_, symbol_) ERC4626(asset_) Ownable(owner_) {
-        
         if (performanceRate_ > MAX_PERFORMANCE_RATE) {
             revert InvalidPerformanceRate(performanceRate_);
         }
@@ -153,7 +152,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
      */
     function updateInvestedAssets(uint256 newInvestedAssets) external onlyOwner {
         _investedAssets = newInvestedAssets;
-        
+
         uint256 performanceFee = _calculatePerformanceFee();
 
         if (performanceFee > 0) {
@@ -180,7 +179,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
 
         emit RedeemsAtNavEnabled();
     }
-    
+
     // ========================================================================
     // =============================== Getters ================================
     // ========================================================================
@@ -227,7 +226,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
     function getLedger(address user) public view returns (uint256 assets, uint256 shares) {
         return (_ledger[user].assets, _ledger[user].shares);
     }
-    
+
     /**
      * @dev Returns the redeemable shares of the user based on the current vesting schedule.
      *
@@ -293,8 +292,8 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
     function deposit(uint256 assets, address receiver) public virtual override returns (uint256) {
         // Call parent deposit function
         uint256 shares = super.deposit(assets, receiver);
-        
-        if(!_redeemsAtNav) {
+
+        if (!_redeemsAtNav) {
             // Update the ledger
             _ledger[receiver].assets += assets;
             _ledger[receiver].shares += shares;
@@ -313,8 +312,8 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
     function mint(uint256 shares, address receiver) public virtual override returns (uint256) {
         // Call parent mint function
         uint256 assets = super.mint(shares, receiver);
-        
-        if(!_redeemsAtNav) {
+
+        if (!_redeemsAtNav) {
             // Update the ledger
             _ledger[receiver].assets += assets;
             _ledger[receiver].shares += shares;
@@ -339,10 +338,10 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
 
         uint256 assets = _previewRedeem(shares, user);
 
-        if(!_redeemsAtNav) {
+        if (!_redeemsAtNav) {
             uint256 availableShares = redeemableShares(user);
-            
-            if(shares > availableShares) {
+
+            if (shares > availableShares) {
                 revert VestingAmountNotRedeemable(user, shares, availableShares);
             }
 
@@ -350,11 +349,11 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
             _ledger[user].assets -= assets;
             _ledger[user].shares -= shares;
 
-            if(block.timestamp < _VESTING_START) {
+            if (block.timestamp < _VESTING_START) {
                 _ledger[user].vesting -= shares;
             }
         }
-        
+
         _withdraw(_msgSender(), receiver, user, assets, shares);
 
         return assets;
@@ -375,23 +374,22 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
 
         uint256 shares = _previewWithdraw(assets, user);
 
-        if(!_redeemsAtNav) {
-
+        if (!_redeemsAtNav) {
             uint256 availableShares = redeemableShares(user);
-            
-            if(shares > availableShares) {
+
+            if (shares > availableShares) {
                 revert VestingAmountNotRedeemable(user, shares, availableShares);
             }
-        
+
             // Update the ledger
             _ledger[user].assets -= assets;
             _ledger[user].shares -= shares;
 
-            if(block.timestamp < _VESTING_START) {
+            if (block.timestamp < _VESTING_START) {
                 _ledger[user].vesting -= shares;
             }
         }
-        
+
         _withdraw(_msgSender(), receiver, user, assets, shares);
 
         return shares;
@@ -429,7 +427,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
      */
     function _previewWithdraw(uint256 assets, address user) private view returns (uint256) {
         uint256 shares = _convertToShares(assets, Math.Rounding.Ceil);
-        if(_redeemsAtNav) return shares;
+        if (_redeemsAtNav) return shares;
         return Math.min(shares, _convertToShares(assets, user, Math.Rounding.Ceil));
     }
 
@@ -443,7 +441,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
      */
     function _previewRedeem(uint256 shares, address user) private view returns (uint256) {
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
-        if(_redeemsAtNav) return assets;
+        if (_redeemsAtNav) return assets;
         return Math.min(assets, _convertToAssets(shares, user, Math.Rounding.Floor));
     }
 
@@ -453,12 +451,8 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
      * @param user The user of the assets
      * @param rounding The rounding direction
      * @return The shares
-     */ 
-    function _convertToShares(
-        uint256 assets,
-        address user,
-        Math.Rounding rounding
-    ) private view returns (uint256) {
+     */
+    function _convertToShares(uint256 assets, address user, Math.Rounding rounding) private view returns (uint256) {
         if (assets == 0) return 0;
 
         uint256 userShares = _ledger[user].shares;
@@ -475,11 +469,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
      * @param rounding The rounding direction
      * @return The assets
      */
-    function _convertToAssets(
-        uint256 shares,
-        address user,
-        Math.Rounding rounding
-    ) private view returns (uint256) {
+    function _convertToAssets(uint256 shares, address user, Math.Rounding rounding) private view returns (uint256) {
         if (shares == 0) return 0;
 
         uint256 userShares = _ledger[user].shares;
@@ -502,7 +492,7 @@ contract SemiRedeemable4626 is ERC4626, Ownable {
 
         if (pricePerShare > _highWaterMark) {
             uint256 profitPerShare = pricePerShare - _highWaterMark;
-            
+
             uint256 profit = profitPerShare.mulDiv(totalSupply(), 10 ** decimals(), Math.Rounding.Ceil);
             performanceFee = profit.mulDiv(_PERFORMANCE_RATE, BPS, Math.Rounding.Ceil);
 

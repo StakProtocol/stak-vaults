@@ -4,55 +4,54 @@ pragma solidity ^0.8.24;
 import {BaseTest} from "./BaseTest.sol";
 
 contract SemiRedeemable4626EdgeTest is BaseTest {
-
     function test_Deposit_ZeroAmount() public {
         vm.startPrank(user1);
         asset.approve(address(vault), 0);
         uint256 shares = vault.deposit(0, user1);
         vm.stopPrank();
-        
+
         assertEq(shares, 0);
     }
 
     function test_Redeem_ZeroAmount() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         uint256 assets = vault.redeem(0, user1, user1);
         vm.stopPrank();
-        
+
         assertEq(assets, 0);
     }
 
     function test_MultipleDeposits_SameUser() public {
         uint256 deposit1 = 1000e18;
         uint256 deposit2 = 500e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), deposit1 + deposit2);
         vault.deposit(deposit1, user1);
         vm.stopPrank();
-        
+
         // Don't set investedAssets - keep totalAssets = balance only for 1:1 conversion
         // When user1 deposits again, totalAssets = 1000e18, totalSupply = 1000e18
         // So shares = 500e18 * 1000e18 / 1000e18 = 500e18 (1:1)
-        
+
         vm.startPrank(user1);
         vault.deposit(deposit2, user1);
         vm.stopPrank();
-        
+
         assertEq(vault.balanceOf(user1), deposit1 + deposit2);
-        
+
         (uint256 assets, uint256 shares) = vault.getLedger(user1);
         // Ledger accumulates deposits
         assertEq(assets, deposit1 + deposit2);
         assertEq(shares, deposit1 + deposit2);
-        
+
         // Total vault balance should be sum
         assertEq(asset.balanceOf(address(vault)), deposit1 + deposit2);
         // totalSupply should equal the sum of shares (1:1 in this case)
@@ -61,19 +60,19 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_Redeem_AllShares() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         uint256 assets = vault.redeem(depositAmount, user1, user1);
         vm.stopPrank();
-        
+
         assertEq(assets, depositAmount);
         assertEq(vault.balanceOf(user1), 0);
-        
+
         (uint256 userAssets, uint256 userShares) = vault.getLedger(user1);
         assertEq(userAssets, 0);
         assertEq(userShares, 0);
@@ -81,19 +80,19 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_Withdraw_AllAssets() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // Withdrawing all assets should work when totalAssets = balance (1:1 conversion)
         // previewWithdraw uses min of standard conversion and user ledger conversion
         // Both are 1:1, so shares = 1000e18
         vm.startPrank(user1);
         uint256 shares = vault.withdraw(depositAmount, user1, user1);
         vm.stopPrank();
-        
+
         assertEq(shares, depositAmount);
         assertEq(vault.balanceOf(user1), 0);
         assertEq(asset.balanceOf(user1), 1000000e18);
@@ -126,34 +125,34 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
     // When user1 approves user2 to redeem, user2 should be able to redeem the shares
     function skip_test_Redeem_WithDifferentUser() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // User1 approves user2 to redeem
         vm.startPrank(user1);
         vault.approve(user2, depositAmount);
         vm.stopPrank();
-        
+
         vm.startPrank(user2);
         uint256 assets = vault.redeem(500e18, user2, user1);
         vm.stopPrank();
-        
+
         assertEq(assets, 500e18);
         assertEq(vault.balanceOf(user1), 500e18);
     }
 
     function test_Withdraw_WithDifferentOwner() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vault.approve(user2, depositAmount);
         vm.stopPrank();
-        
+
         vm.startPrank(user2);
         // previewWithdraw uses msg.sender (user2) as user, which has no ledger
         // This will revert due to division by zero
@@ -188,7 +187,7 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
     function test_UtilizationRate_FullUtilization() public {
         vm.prank(owner);
         vault.updateInvestedAssets(1000e18);
-        
+
         // All assets are invested (none in contract)
         uint256 utilization = vault.utilizationRate();
         assertEq(utilization, 10000); // 100%
@@ -196,19 +195,19 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_PreviewRedeem_AfterNavEnabled() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         asset.mint(address(vault), 1000e18);
         vm.prank(owner);
         vault.updateInvestedAssets(2000e18);
-        
+
         vm.prank(owner);
         vault.enableRedeemsAtNav();
-        
+
         vm.prank(user1);
         uint256 assets = vault.previewRedeem(500e18);
         // With NAV enabled, it uses standard ERC4626 conversion (not user ledger)
@@ -223,19 +222,19 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_PreviewWithdraw_AfterNavEnabled() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         asset.mint(address(vault), 1000e18);
         vm.prank(owner);
         vault.updateInvestedAssets(2000e18);
-        
+
         vm.prank(owner);
         vault.enableRedeemsAtNav();
-        
+
         vm.prank(user1);
         uint256 shares = vault.previewWithdraw(1000e18);
         // With NAV enabled, it uses standard ERC4626 conversion
@@ -250,24 +249,24 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_MaxRedeem() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         uint256 maxRedeem = vault.maxRedeem(user1);
         assertEq(maxRedeem, 1000e18);
     }
 
     function test_MaxWithdraw() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // maxWithdraw calls previewRedeem which needs msg.sender context
         // Without investedAssets set, totalAssets = 1000e18, so maxWithdraw should work
         vm.prank(user1);
@@ -297,41 +296,41 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_ConvertToShares_Public() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         uint256 shares = vault.convertToShares(500e18, user1);
         assertEq(shares, 500e18);
     }
 
     function test_ConvertToAssets_Public() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         uint256 assets = vault.convertToAssets(500e18, user1);
         assertEq(assets, 500e18);
     }
 
     function test_Redeem_VestingUpdate() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // Check that vesting was updated
         (uint256 _assets, uint256 _shares) = vault.getLedger(user1);
         assertEq(_assets, depositAmount);
         assertEq(_shares, shares);
-        
+
         // Before vesting starts, redeem should update vesting
         vm.startPrank(user1);
         uint256 assets = vault.redeem(shares, user1, user1);
@@ -349,17 +348,17 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_Withdraw_VestingUpdate() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // Before vesting starts, withdraw should update vesting
         vm.startPrank(user1);
         uint256 shares = vault.withdraw(500e18, user1, user1);
         vm.stopPrank();
-        
+
         // Check that vesting was updated
         (uint256 assets, uint256 userShares) = vault.getLedger(user1);
         assertEq(assets, 500e18);
@@ -368,12 +367,12 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_PreviewRedeem_WithOwner() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // Test previewRedeem with different user context
         // previewRedeem uses msg.sender as user, so user2 has no deposits
         vm.prank(user2);
@@ -382,12 +381,12 @@ contract SemiRedeemable4626EdgeTest is BaseTest {
 
     function test_PreviewWithdraw_WithOwner() public {
         uint256 depositAmount = 1000e18;
-        
+
         vm.startPrank(user1);
         asset.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user1);
         vm.stopPrank();
-        
+
         // Test previewWithdraw with different user context
         // previewWithdraw uses msg.sender as user
         vm.prank(user2);
