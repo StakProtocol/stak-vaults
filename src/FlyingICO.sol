@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+// TODO: ADD VESTING MECHANICS
+
 /*
   Flying ICO — Simplified Investment Contract
   - Users deposit accepted assets in form of accepted ERC20s
@@ -9,7 +11,7 @@ pragma solidity ^0.8.24;
   - Token maximum supply: X Tokens (with 18 decimals).
   - When minted on primary, Tokens are held by this contract and tracked in a PerpetualPUT Position.
   - Users can Divest (burn Tokens from their position and get back original asset amount)
-    or Withdraw (release Tokens to user, invalidating the PUT portion and freeing backing
+    or unlock (release Tokens to user, invalidating the PUT portion and freeing backing
     to protocol backing pool).
 */
 
@@ -34,11 +36,14 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
 
     address public constant ETH_ADDR = address(0);
     uint256 public constant WAD = 1e18;
+    uint256 private constant BPS = 10_000; // 100%
 
-    uint256 public immutable _TOKENS_CAP;
-    uint256 public immutable _TOKENS_PER_USD;
-    address public immutable _TREASURY;
-    address public immutable _SEQUENCER; // only for L2s
+    uint256 private immutable _VESTING_START;
+    uint256 private immutable _VESTING_END;
+    uint256 private immutable _TOKENS_CAP;
+    uint256 private immutable _TOKENS_PER_USD;
+    address private immutable _TREASURY;
+    address private immutable _SEQUENCER; // only for L2s
 
     // ========================================================================
     // Structs ===============================================================
@@ -48,7 +53,8 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         address user; // owner of the position
         address asset; // asset used at deposit (ETH_ADDR for native)
         uint256 assetAmount; // amount of original asset reserved (in asset decimals)
-        uint256 tokenAmount; // amount of FT (in FT units) reserved and locked in PUT
+        uint256 tokenAmount; // amount of Tokens (in units) reserved and locked in PUT
+        uint256 vestingAmount; // amount of Tokens (in units) that is vesting and not redeemable yet
     }
 
     struct PriceFeed {
@@ -74,6 +80,8 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     error FlyingICO__NotEnoughLockedTokens();
     error FlyingICO__Unauthorized();
     error FlyingICO__ZeroAddress();
+    error FlyingICO__InvalidVestingSchedule(uint256 currentTime, uint256 vestingStart, uint256 vestingEnd);
+    error FlyingICO__NotEnoughDivestibleTokens(uint256 positionId, uint256 tokensToBurn, uint256 availableTokens);
 
     // ========================================================================
     // Events =================================================================
@@ -88,7 +96,9 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         address[] priceFeeds,
         uint256[] frequencies,
         address sequencer,
-        address treasury
+        address treasury,
+        uint256 vestingStart,
+        uint256 vestingEnd
     );
     event FlyingICO__Invested(
         address indexed user, uint256 positionId, address asset, uint256 assetAmount, uint256 tokensMinted
@@ -100,7 +110,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         address assetReturned,
         uint256 assetReturnedAmount
     );
-    event FlyingICO__Withdrawn(
+    event FlyingICO__Unlocked(
         address indexed user,
         uint256 positionId,
         uint256 tokensUnlocked,
@@ -134,7 +144,9 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         address[] memory priceFeeds_,
         uint256[] memory frequencies_,
         address sequencer_,
-        address treasury_
+        address treasury_,
+        uint256 vestingStart_,
+        uint256 vestingEnd_
     ) ERC20(name_, symbol_) ERC20Permit(name_) {
         if (acceptedAssets_.length != priceFeeds_.length || acceptedAssets_.length != frequencies_.length) {
             revert InvalidArraysLength(acceptedAssets_.length, priceFeeds_.length, frequencies_.length);
@@ -150,13 +162,19 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
             revert FlyingICO__ZeroAddress();
         }
 
+        if (vestingStart_ < block.timestamp || vestingEnd_ < vestingStart_) {
+            revert FlyingICO__InvalidVestingSchedule(block.timestamp, vestingStart_, vestingEnd_);
+        }
+
         _TOKENS_CAP = tokenCap_ * WAD;
         _TOKENS_PER_USD = tokensPerUsd_ * WAD;
         _TREASURY = treasury_;
         _SEQUENCER = sequencer_;
+        _VESTING_START = vestingStart_;
+        _VESTING_END = vestingEnd_;
 
         emit FlyingICO__Initialized(
-            name_, symbol_, tokenCap_, tokensPerUsd_, acceptedAssets_, priceFeeds_, frequencies_, sequencer_, treasury_
+            name_, symbol_, tokenCap_, tokensPerUsd_, acceptedAssets_, priceFeeds_, frequencies_, sequencer_, treasury_, vestingStart_, vestingEnd_
         );
     }
 
@@ -184,8 +202,14 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     /// @param tokensToBurn amount of Tokens (in Tokens units) to divest from that position
     /// @dev This function is used to divest some or all of your Perpetual PUT (burn Tokens in the position and receive asset at par)
     /// @param positionId Id of the position created at invest
-    function divest(uint256 positionId, uint256 tokensToBurn) external nonReentrant {
-        uint256 assetAmount = _divest(positionId, tokensToBurn);
+    function divest(uint256 positionId, uint256 tokensToBurn) external nonReentrant returns (uint256 assetAmount) {
+        uint256 availableTokens = divestibleTokens(positionId);
+
+        if (tokensToBurn > availableTokens) {
+            revert FlyingICO__NotEnoughDivestibleTokens(positionId, tokensToBurn, availableTokens);
+        }
+
+        assetAmount = _divest(positionId, tokensToBurn);
 
         _burn(address(this), tokensToBurn);
 
@@ -204,13 +228,13 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         emit FlyingICO__Divested(msg.sender, positionId, tokensToBurn, positions[positionId].asset, assetAmount);
     }
 
-    /// @notice Withdraw (unlock) some or all Tokens from your Perpetual PUT. This invalidates the PUT on that portion forever,
+    /// @notice Unlock (unlock) some or all Tokens from your Perpetual PUT. This invalidates the PUT on that portion forever,
     /// and transfers Tokens to the user. The backing previously reserved becomes available for protocol operations.
     /// @param positionId Id of the position created at invest
     /// @param tokensToUnlock amount of Tokens (in Tokens units) to unlock from that position
     /// @dev This function is used to withdraw some or all of your Perpetual PUT (unlock Tokens from the position and receive asset at par)
-    function withdraw(uint256 positionId, uint256 tokensToUnlock) external nonReentrant {
-        uint256 assetAmount = _divest(positionId, tokensToUnlock);
+    function unlock(uint256 positionId, uint256 tokensToUnlock) external nonReentrant returns (uint256 assetAmount) {
+        assetAmount = _divest(positionId, tokensToUnlock);
 
         // Transfer Tokens from contract to user (these Tokens lose the Perpetual PUT)
         // The Tokens are already minted and sitting in this contract
@@ -219,7 +243,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         // Released backing becomes available for protocol operations:
         // Backing has been reduced above, so the released assets are now available
         // to the treasury for protocol operations via takeAssetsToTreasury.
-        emit FlyingICO__Withdrawn(msg.sender, positionId, tokensToUnlock, positions[positionId].asset, assetAmount);
+        emit FlyingICO__Unlocked(msg.sender, positionId, tokensToUnlock, positions[positionId].asset, assetAmount);
     }
 
     /// @notice Take assets from the contract to the treasury
@@ -272,8 +296,14 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     /// @param assetAmount the amount of asset to invest
     /// @return positionId the id of the position created
     function _invest(address asset, uint256 assetAmount) internal returns (uint256 positionId) {
-        // sanity check
-        _investSanityCheck(asset, assetAmount);
+        if (assetAmount == 0) {
+            revert FlyingICO__ZeroValue();
+        }
+
+        if (!_acceptedAsset(asset)) {
+            revert FlyingICO__AssetNotAccepted(asset);
+        }
+
         // compute token amount
         uint256 tokenAmount = _computeTokenAmount(asset, assetAmount);
         // mint tokens to this contract
@@ -283,44 +313,13 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         // create position
         positionId = nextPositionId++;
         positions[positionId] =
-            Position({user: msg.sender, asset: asset, assetAmount: assetAmount, tokenAmount: tokenAmount});
+            Position({user: msg.sender, asset: asset, assetAmount: assetAmount, tokenAmount: tokenAmount, vestingAmount: tokenAmount});
         positionsOf[msg.sender].push(positionId);
 
         emit FlyingICO__Invested(msg.sender, positionId, asset, assetAmount, tokenAmount);
     }
 
-    function _divest(uint256 positionId, uint256 tokensAmount) internal returns (uint256 assetAmount) {
-        // sanity check
-        _divestSanityCheck(positionId, tokensAmount);
-        // compute proportional asset return
-        assetAmount = _computeAssetAmount(positionId, tokensAmount);
-
-        // Update position
-        Position storage position = positions[positionId];
-        position.tokenAmount -= tokensAmount;
-        position.assetAmount -= assetAmount;
-
-        // reduce backing
-        backingBalances[position.asset] -= assetAmount;        
-    }
-
-    /// @notice Internal function to check the sanity of an investment
-    /// @param asset the asset to invest
-    /// @param assetAmount the amount of asset to invest
-    function _investSanityCheck(address asset, uint256 assetAmount) internal view {
-        if (assetAmount == 0) {
-            revert FlyingICO__ZeroValue();
-        }
-
-        if (!_acceptedAsset(asset)) {
-            revert FlyingICO__AssetNotAccepted(asset);
-        }
-    }
-
-    /// @notice Internal function to check the sanity of a divestment
-    /// @param positionId Id of the position created at invest
-    /// @param tokenAmount amount of Tokens (in Tokens units) to divest from that position
-    function _divestSanityCheck(uint256 positionId, uint256 tokenAmount) internal view {
+    function _divest(uint256 positionId, uint256 tokenAmount) internal returns (uint256 assetAmount) {
         if (tokenAmount == 0) {
             revert FlyingICO__ZeroValue();
         }
@@ -332,6 +331,22 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         if (positions[positionId].tokenAmount < tokenAmount) {
             revert FlyingICO__NotEnoughLockedTokens();
         }
+
+        // compute proportional asset return
+        assetAmount = _computeAssetAmount(positionId, tokenAmount);
+
+        // Update position
+        Position storage position = positions[positionId];
+        position.tokenAmount -= tokenAmount;
+        position.assetAmount -= assetAmount;
+
+        // if vesting is not started, reduce the vesting amount
+        if (block.timestamp < _VESTING_START) {
+            position.vestingAmount -= tokenAmount;
+        }
+
+        // reduce backing
+        backingBalances[position.asset] -= assetAmount;
     }
 
     /// @notice Internal function to compute the token amount for an investment
@@ -361,16 +376,16 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
 
     /// @notice Internal function to compute the asset amount for a divestment
     /// @param positionId Id of the position created at invest
-    /// @param tokensToBurn amount of Tokens (in Tokens units) to divest from that position
+    /// @param tokenAmount amount of Tokens (in Tokens units) to divest from that position
     /// @return assetAmount the amount of asset to return
-    function _computeAssetAmount(uint256 positionId, uint256 tokensToBurn) internal view returns (uint256 assetAmount) {
+    function _computeAssetAmount(uint256 positionId, uint256 tokenAmount) internal view returns (uint256 assetAmount) {
         Position memory position = positions[positionId];
 
         if (position.tokenAmount == 0) {
             revert FlyingICO__ZeroTokenAmount();
         }
 
-        assetAmount = tokensToBurn.mulDiv(position.assetAmount, position.tokenAmount, Math.Rounding.Floor);
+        assetAmount = tokenAmount.mulDiv(position.assetAmount, position.tokenAmount, Math.Rounding.Floor);
 
         if (assetAmount == 0) {
             revert FlyingICO__ZeroValue();
@@ -415,5 +430,72 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     /// @return true if the asset is accepted, false otherwise
     function _acceptedAsset(address asset) internal view returns (bool) {
         return address(priceFeeds[asset].feed) != address(0);
+    }
+
+    /* ========================================================================
+    * =========================== Vesting Schedule ============================
+    * =========================================================================
+    */
+
+    /**
+     * @dev Returns the divestible shares of the position based on the current vesting schedule.
+     *
+     * IMPORTANT: This function returns 0 after the vesting period ends, effectively
+     * locking all shares until NAV redemptions are enabled by the owner.
+     *
+     * Vesting phases:
+     * - Before vesting starts: Returns 100% of user's vesting shares
+     * - During vesting: Returns linearly decreasing amount based on time remaining
+     * - After vesting ends: Returns 0 (shares are locked until NAV mode is enabled)
+     *
+     * @param positionId The id of the position to query the divestible shares for
+     * @return The divestible shares (0 if vesting period has ended)
+     */
+    function divestibleTokens(uint256 positionId) public view returns (uint256) {
+        return vestingRate().mulDiv(positions[positionId].vestingAmount, BPS, Math.Rounding.Floor);
+    }
+
+    /**
+     * @dev Returns the current vesting rate of the vault.
+     *
+     * The vesting rate determines what percentage of vested shares are currently redeemable:
+     * - Before vesting starts: 10000 (100% - all shares redeemable)
+     * - During vesting: Decreases linearly from 10000 to 0
+     * - After vesting ends: 0 (0% - no shares redeemable via vesting)
+     *
+     * @return The vesting rate as a percentage in BPS (10000 = 100%, 0 = 0%)
+     */
+    function vestingRate() public view returns (uint256) {
+        return _calculateVestingRate();
+    }
+
+    /**
+     * @dev Calculates the current vesting rate based on the vesting schedule.
+     *
+     * This function implements the core vesting logic:
+     * 1. Pre-vesting: Returns 100% (BPS = 10000)
+     * 2. During vesting: Returns linearly decreasing rate
+     * 3. Post-vesting: Returns 0% - THIS LOCKS ALL SHARES
+     *
+     * The post-vesting behavior (returning 0) is intentional and prevents
+     * redemptions at potentially stale fair prices after the vesting period.
+     * Users must wait for NAV redemptions to be enabled to access their funds.
+     *
+     * @return The vesting rate in basis points (0-10000)
+     */
+    function _calculateVestingRate() internal view returns (uint256) {
+        if (block.timestamp < _VESTING_START) {
+            return BPS;
+        }
+
+        if (block.timestamp > _VESTING_END) {
+            return 0;
+        }
+
+        //                vesting end - current time
+        // vesting rate = ---------------------------- x BPS
+        //                vesting end - vesting start
+
+        return BPS.mulDiv(_VESTING_END - block.timestamp, _VESTING_END - _VESTING_START, Math.Rounding.Floor);
     }
 }
