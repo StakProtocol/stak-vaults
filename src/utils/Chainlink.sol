@@ -68,7 +68,6 @@ library ChainlinkLibrary {
             }
         }
 
-        // TODO: are we sure?
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint256(price);
     }

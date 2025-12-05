@@ -13,44 +13,8 @@ import {console} from "forge-std/src/Test.sol";
 /**
  * @title StakVault (Semi Redeemable 4626)
  * @dev A simple ERC4626 vault implementation with perpetual put option, vesting mechanics and performance fees
- *
- * \=== REDEMPTION MECHANICS ===
- * The vault operates in two distinct modes:
- * 1. Fair Price Mode (default): Redemptions happen at the same price shares were minted at
- * 2. NAV Mode: Redemptions happen at current Net Asset Value (NAV) price
- *
- * Once NAV redemptions are enabled by the owner, the vault cannot return to fair pricing mode.
- *
- * \=== VESTING SCHEDULE ===
- * The vault implements a linear vesting schedule with three distinct phases:
- *
- * 1. PRE-VESTING (before vestingStart):
- *    - All shares are fully redeemable at fair price
- *    - Users can redeem 100% of their shares
- *
- * 2. VESTING PERIOD (vestingStart to vestingEnd):
- *    - Redeemable shares decrease linearly over time
- *    - Formula: redeemableShares = totalShares * (vestingEnd - currentTime) / (vestingEnd - vestingStart)
- *    - Users can only redeem the calculated redeemable portion
- *
- * 3. POST-VESTING (after vestingEnd):
- *    - IMPORTANT: Vesting-based redemptions are NO LONGER AVAILABLE (redeemableShares = 0)
- *    - Users' shares are effectively locked until NAV redemptions are enabled
- *    - This is the intended behavior to prevent post-vesting redemptions at stale fair prices
- *    - Users must wait for the owner to enable NAV redemptions to access their funds
- *
- * \=== IMPORTANT NOTES ===
- * - After vesting ends, users cannot redeem shares until NAV mode is enabled
- * - This prevents redemptions at potentially outdated fair prices after the vesting period
- * - The owner should enable NAV redemptions when appropriate to unlock user funds
- * - Performance fees are calculated as a percentage of profit above the high water mark
- * - The vault maintains individual user ledgers for fair price calculations
- *
- * \=== OWNER RESPONSIBILITIES ===
- * - Set total assets to reflect true vault value
- * - Enable NAV redemptions when post-vesting redemptions should be allowed
- * - Manage performance fee collection through treasury
  */
+
 contract StakVault is ERC4626, Ownable {
     using Math for uint256;
     using SafeERC20 for IERC20;

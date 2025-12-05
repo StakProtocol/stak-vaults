@@ -11,7 +11,6 @@ pragma solidity ^0.8.24;
   - Users can Divest (burn Tokens from their position and get back original asset amount)
     or Withdraw (release Tokens to user, invalidating the PUT portion and freeing backing
     to protocol backing pool).
-  - Simplified buyback-and-burn: owner can use backing to burn Tokens held by the contract.
 */
 
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
@@ -23,7 +22,7 @@ import {SafeERC20} from "@openzeppelin/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {AggregatorV3Interface} from "@chainlink/shared/interfaces/AggregatorV3Interface.sol";
-import {ChainlinkLibrary} from "./lib/Chainlink.sol";
+import {ChainlinkLibrary} from "./utils/Chainlink.sol";
 
 contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     using Math for uint256;
@@ -68,6 +67,8 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     error FlyingICO__InsufficientAssetAmount();
     error FlyingICO__InsufficientETH();
     error FlyingICO__NotEnoughLockedTokens();
+    error FlyingICO__Unauthorized();
+    error FlyingICO__ZeroAddress();
 
     // ========================================================================
     // Events =================================================================
@@ -137,6 +138,10 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
             priceFeeds[acceptedAssets_[i]] = priceFeeds_[i];
         }
 
+        if (treasury_ == address(0)) {
+            revert FlyingICO__ZeroAddress();
+        }
+
         _TOKENS_CAP = tokenCap_ * WAD;
         _TOKENS_PER_USD = tokensPerUsd_ * WAD;
         _TREASURY = treasury_;
@@ -199,7 +204,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     }
 
     /// @notice Withdraw (unlock) some or all Tokens from your Perpetual PUT. This invalidates the PUT on that portion forever,
-    /// and transfers Tokens to the user. The backing previously reserved becomes protocol backing (used for buybacks).
+    /// and transfers Tokens to the user. The backing previously reserved becomes available for protocol operations.
     /// @param positionId Id of the position created at invest
     /// @param tokensToUnlock amount of Tokens (in Tokens units) to unlock from that position
     /// @dev This function is used to withdraw some or all of your Perpetual PUT (unlock Tokens from the position and receive asset at par)
@@ -214,13 +219,16 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         position.tokenAmount -= tokensToUnlock;
         position.assetAmount -= assetReleased;
 
+        // reduce backing
+        backingBalances[position.asset] -= assetReleased;
+
         // Transfer Tokens from contract to user (these Tokens lose the Perpetual PUT)
         // The Tokens are already minted and sitting in this contract
         _transfer(address(this), msg.sender, tokensToUnlock);
 
-        // released backing becomes available for protocol operations / buybacks:
-        // backingBalances already tracked; nothing to move on-chain other than leaving it
-        // here we just signal that this portion is now available to the treasury for buybacks or other protocol operations.
+        // Released backing becomes available for protocol operations:
+        // Backing has been reduced above, so the released assets are now available
+        // to the treasury for protocol operations via takeAssetsToTreasury.
         emit FlyingICO__Withdrawn(msg.sender, positionId, tokensToUnlock, position.asset, assetReleased);
     }
 
@@ -228,7 +236,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     /// @param asset asset to take
     /// @param assetAmount amount of asset to take
     function takeAssetsToTreasury(address asset, uint256 assetAmount) external nonReentrant {
-        if (assetAmount <= 0) {
+        if (assetAmount == 0) {
             revert FlyingICO__ZeroValue();
         }
 
@@ -286,7 +294,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         positionId = nextPositionId++;
         positions[positionId] =
             Position({user: msg.sender, asset: asset, assetAmount: assetAmount, tokenAmount: tokenAmount});
-        positionsOf[msg.sender].push(positionId); // TODO: necessary or indexable?
+        positionsOf[msg.sender].push(positionId);
 
         emit FlyingICO__Invested(msg.sender, positionId, asset, assetAmount, tokenAmount);
     }
@@ -295,7 +303,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     /// @param asset the asset to invest
     /// @param assetAmount the amount of asset to invest
     function _investSanityCheck(address asset, uint256 assetAmount) internal view {
-        if (assetAmount <= 0) {
+        if (assetAmount == 0) {
             revert FlyingICO__ZeroValue();
         }
 
@@ -312,8 +320,12 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     /// @param positionId Id of the position created at invest
     /// @param tokensToBurn amount of Tokens (in Tokens units) to divest from that position
     function _divestSanityCheck(uint256 positionId, uint256 tokensToBurn) internal view {
-        if (tokensToBurn <= 0) {
+        if (tokensToBurn == 0) {
             revert FlyingICO__ZeroValue();
+        }
+
+        if (positions[positionId].user != msg.sender) {
+            revert FlyingICO__Unauthorized();
         }
 
         if (positions[positionId].tokenAmount < tokensToBurn) {
@@ -336,14 +348,14 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         // compute USD value
         uint256 usdValue = _assetToUsdValue(asset, assetAmount);
 
-        if (usdValue <= 0) {
+        if (usdValue == 0) {
             revert FlyingICO__ZeroUsdValue();
         }
 
         // Tokens to mint
         tokenAmount = usdValue.mulDiv(_TOKENS_PER_USD, WAD, Math.Rounding.Floor);
 
-        if (tokenAmount <= 0) {
+        if (tokenAmount == 0) {
             revert FlyingICO__ZeroTokenAmount();
         }
 
@@ -360,9 +372,13 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     function _computeAssetAmount(uint256 positionId, uint256 tokensToBurn) internal view returns (uint256 assetAmount) {
         Position memory position = positions[positionId];
 
+        if (position.tokenAmount == 0) {
+            revert FlyingICO__ZeroTokenAmount();
+        }
+
         assetAmount = tokensToBurn.mulDiv(position.assetAmount, position.tokenAmount, Math.Rounding.Floor);
 
-        if (assetAmount <= 0) {
+        if (assetAmount == 0) {
             revert FlyingICO__ZeroValue();
         }
 
