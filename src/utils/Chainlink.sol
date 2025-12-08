@@ -18,12 +18,12 @@ library ChainlinkLibrary {
     error ChainlinkLibrary__GracePeriodNotOver();
 
     function getPrice(address oracle, uint256 frequency, address sequencer) internal view returns (uint256) {
-        (uint80 roundId, int256 price,, uint256 updatedAt, uint80 answeredInRound) =
-            IPriceFeed(oracle).latestRoundData();
-
         if (oracle == address(0)) {
             revert ChainlinkLibrary__InvalidOracle();
         }
+
+        (uint80 roundId, int256 price,, uint256 updatedAt, uint80 answeredInRound) =
+            IPriceFeed(oracle).latestRoundData();
 
         if (price <= 0) {
             revert ChainlinkLibrary__InvalidPrice();

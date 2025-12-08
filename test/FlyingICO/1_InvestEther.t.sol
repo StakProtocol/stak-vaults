@@ -18,8 +18,7 @@ contract FlyingICOInvestEtherTest is BaseTest {
         assertEq(positionId, 0);
         assertEq(ico.nextPositionId(), 1);
 
-        (address user, address asset, uint256 assetAmount, uint256 tokenAmount,) =
-            ico.positions(positionId);
+        (address user, address asset, uint256 assetAmount, uint256 tokenAmount,) = ico.positions(positionId);
         assertEq(user, user1);
         assertEq(asset, address(0));
         assertEq(assetAmount, ethAmount);

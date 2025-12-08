@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// TODO: ADD VESTING MECHANICS
-
 /*
   Flying ICO — Simplified Investment Contract
   - Users deposit accepted assets in form of accepted ERC20s
@@ -13,10 +11,17 @@ pragma solidity ^0.8.24;
   - Users can Divest (burn Tokens from their position and get back original asset amount)
     or unlock (release Tokens to user, invalidating the PUT portion and freeing backing
     to protocol backing pool).
+  - Vesting & Post-Vesting Behavior:
+    - All minted Tokens are subject to a linear vesting schedule.
+    - Before vesting starts, 100% of tokens are divestable (BPS = 10000).
+    - During vesting, the divestable amount decreases linearly over time.
+    - After the vesting period ends, the vesting rate becomes 0% and *all tokens remain locked*. Users cannot divest through the vesting mechanism anymore.
+    - Post-vesting lockup prevents redemptions
+        using potentially stale fair prices. Users must wait for NAV-based
+        redemptions or a future unlock mechanism defined by the protocol.
 */
 
 import {ERC20} from "@openzeppelin/token/ERC20/ERC20.sol";
-import {ERC20Burnable} from "@openzeppelin/token/ERC20/extensions/ERC20Burnable.sol";
 import {ERC20Permit} from "@openzeppelin/token/ERC20/extensions/ERC20Permit.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/token/ERC20/extensions/IERC20Metadata.sol";
@@ -26,7 +31,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {AggregatorV3Interface} from "@chainlink/shared/interfaces/AggregatorV3Interface.sol";
 import {ChainlinkLibrary} from "./utils/Chainlink.sol";
 
-contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
+contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
     using Math for uint256;
     using SafeERC20 for IERC20;
 
@@ -66,7 +71,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
     // Errors =================================================================
     // ========================================================================
 
-    error InvalidArraysLength(uint256 length1, uint256 length2, uint256 length3);
+    error FlyingICO__InvalidArraysLength(uint256 length1, uint256 length2, uint256 length3);
     error FlyingICO__ZeroValue();
     error FlyingICO__AssetNotAccepted(address asset);
     error FlyingICO__ZeroUsdValue();
@@ -149,7 +154,7 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         uint256 vestingEnd_
     ) ERC20(name_, symbol_) ERC20Permit(name_) {
         if (acceptedAssets_.length != priceFeeds_.length || acceptedAssets_.length != frequencies_.length) {
-            revert InvalidArraysLength(acceptedAssets_.length, priceFeeds_.length, frequencies_.length);
+            revert FlyingICO__InvalidArraysLength(acceptedAssets_.length, priceFeeds_.length, frequencies_.length);
         }
 
         // set accepted assets and price feeds
