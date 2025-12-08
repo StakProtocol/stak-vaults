@@ -1,16 +1,26 @@
-# StakVault
+# Semi-Redeemable Vaults and Tokens
 
-An ERC-4626 vault with dual redemption modes and per-user deposit tracking.
+A suite of smart contracts for investment and vault management with dual redemption modes and perpetual put options.
 
-## Features
+## Contracts
 
-- **Dual Redemption Modes**
-  - NAV Mode: Standard ERC-4626 redemption at current Net Asset Value
-  - Deposit Price Mode: Redemption at original deposit price using per-user ledger
+### StakVault
+ERC-4626 vault with dual redemption modes and performance fees.
 
-- **Per-User Ledger System**: Tracks individual user deposits (assets & shares) for fair redemption pricing
+**Features:**
+- **Dual Redemption Modes**: NAV-based (standard ERC4626) or fair price (1:1 ledger-based)
+- **Per-User Position Tracking**: Tracks individual deposits for fair redemption pricing
+- **Performance Fees**: Calculated based on high water mark
+- **Vesting Mechanics**: Linear vesting schedule for share unlocking
 
-- **Owner Controls**: Set total assets externally and toggle between redemption modes
+### FlyingICO
+Investment contract with perpetual put options and Chainlink price feeds.
+
+**Features:**
+- **Multi-Asset Support**: Accepts ETH and ERC20 tokens with Chainlink price feeds
+- **Token Minting**: Mints tokens at a fixed rate per USD invested
+- **Perpetual PUT Options**: Users can divest (burn tokens, get assets back) or unlock (release tokens, free backing)
+- **Vesting Schedule**: Linear vesting for token unlocking
 
 ## Installation
 
@@ -19,25 +29,15 @@ forge soldeer install
 forge build
 ```
 
-## Usage
+## Deployment
 
-### Deploy
+Deploy the Factory contract:
 
-```solidity
-StakVault vault = new StakVault(
-    assetToken,
-    "Vault Token",
-    "VAULT",
-    owner
-);
+```bash
+forge script script/DeployFactory.s.sol:DeployFactory --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
 ```
 
-### Owner Operations
-
-```solidity
-vault.setTotalAssets(newTotalAssets);
-vault.setRedeemsAtNav();
-```
+Use the Factory to deploy StakVault or FlyingICO instances.
 
 ## Testing
 

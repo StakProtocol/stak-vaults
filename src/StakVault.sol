@@ -50,7 +50,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     bool public redeemsAtNav; // Whether redemptions are enabled
     uint256 public highWaterMark; // High water mark of the vault for performance fees
     uint256 public backingBalance; // Backing assets held as backing for open PUTs
-    uint256 public investedAssets; // Total assets managed by the vault    
+    uint256 public investedAssets; // Total assets managed by the vault
 
     uint256 public nextPositionId;
     mapping(uint256 => Position) public positions; // positionId -> position
@@ -61,12 +61,26 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     * =========================================================================
     */
 
+    event StakVault__Initialized(
+        address indexed asset,
+        string name,
+        string symbol,
+        address indexed owner,
+        address indexed treasury,
+        uint256 performanceRate,
+        uint256 vestingStart,
+        uint256 vestingEnd
+    );
     event StakVault__AssetsTaken(uint256 assets);
     event StakVault__InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
     event StakVault__RedeemsAtNavEnabled();
     event StakVault__Invested(address indexed user, uint256 positionId, uint256 assetAmount, uint256 shareAmount);
-    event StakVault__Divested(address indexed user, uint256 positionId, uint256 sharesBurned, uint256 assetReturnedAmount);
-    event StakVault__Unlocked(address indexed user, uint256 positionId, uint256 sharesUnlocked, uint256 assetReleasedAmount);
+    event StakVault__Divested(
+        address indexed user, uint256 positionId, uint256 sharesBurned, uint256 assetReturnedAmount
+    );
+    event StakVault__Unlocked(
+        address indexed user, uint256 positionId, uint256 sharesUnlocked, uint256 assetReleasedAmount
+    );
 
     /* ========================================================================
     * =============================== Errors ================================
@@ -84,6 +98,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     error StakVault__InsufficientAssetAmount();
     error StakVault__InsufficientBacking();
     error StakVault__RedeemsAtNavNotEnabled();
+    error StakVault__RedeemsAtNavAlreadyEnabled();
     error StakVault__VestingAmountNotRedeemable(address user, uint256 shares, uint256 availableShares);
     error StakVault__NotEnoughDivestibleShares(uint256 positionId, uint256 sharesToBurn, uint256 availableShares);
 
@@ -124,6 +139,10 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         _PERFORMANCE_RATE = performanceRate_;
         _VESTING_START = vestingStart_;
         _VESTING_END = vestingEnd_;
+
+        emit StakVault__Initialized(
+            address(asset_), name_, symbol_, owner_, treasury_, performanceRate_, vestingStart_, vestingEnd_
+        );
     }
 
     // ========================================================================
@@ -273,7 +292,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
      * @return The assets
      */
     function redeem(uint256 shares, address receiver, address user) public virtual override returns (uint256) {
-        if(!redeemsAtNav) {
+        if (!redeemsAtNav) {
             revert StakVault__RedeemsAtNavNotEnabled();
         }
 
@@ -281,14 +300,14 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Override withdraw to update the ledger.
+     * @dev Override withdraw to check if redemptions are enabled.
      * @param assets The assets to withdraw
      * @param receiver The receiver of the shares
      * @param user The user of the assets
-     * @return The shares
+     * @return shares The shares to withdraw
      */
     function withdraw(uint256 assets, address receiver, address user) public virtual override returns (uint256) {
-        if(!redeemsAtNav) {
+        if (!redeemsAtNav) {
             revert StakVault__RedeemsAtNavNotEnabled();
         }
 
@@ -306,6 +325,10 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     /// @dev This function is used to divest some or all of your Perpetual PUT (burn Tokens in the position and receive asset at par)
     /// @param positionId Id of the position created at invest
     function divest(uint256 positionId, uint256 sharesToBurn) external nonReentrant returns (uint256 assetAmount) {
+        if (redeemsAtNav) {
+            revert StakVault__RedeemsAtNavAlreadyEnabled();
+        }
+
         uint256 availableShares = divestibleShares(positionId);
 
         if (sharesToBurn > availableShares) {
@@ -358,10 +381,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
 
         positionId = nextPositionId++;
         positions[positionId] = Position({
-            user: msg.sender,
-            assetAmount: assetAmount,
-            shareAmount: shareAmount,
-            vestingAmount: shareAmount
+            user: msg.sender, assetAmount: assetAmount, shareAmount: shareAmount, vestingAmount: shareAmount
         });
 
         positionsOf[msg.sender].push(positionId);

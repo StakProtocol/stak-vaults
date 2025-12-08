@@ -26,12 +26,15 @@ contract BaseTest is Test {
     uint256 public vestingEnd;
 
     // Events
-    event AssetsTaken(uint256 assets);
-    event InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
-    event RedeemsAtNavEnabled();
-    event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares);
-    event Withdraw(
-        address indexed sender, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
+    event StakVault__AssetsTaken(uint256 assets);
+    event StakVault__InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
+    event StakVault__RedeemsAtNavEnabled();
+    event StakVault__Invested(address indexed user, uint256 positionId, uint256 assetAmount, uint256 shareAmount);
+    event StakVault__Divested(
+        address indexed user, uint256 positionId, uint256 sharesBurned, uint256 assetReturnedAmount
+    );
+    event StakVault__Unlocked(
+        address indexed user, uint256 positionId, uint256 sharesUnlocked, uint256 assetReleasedAmount
     );
 
     function setUp() public virtual {
@@ -51,4 +54,27 @@ contract BaseTest is Test {
         asset.mint(user3, 1000000e18);
         asset.mint(owner, 1000000e18);
     }
+
+    // Helper function to calculate ledger from positions
+    function getLedger(address user) public view returns (uint256 assets, uint256 shares) {
+        uint256[] memory positionIds = vault.positionsOfUser(user);
+        for (uint256 i = 0; i < positionIds.length; i++) {
+            (address posUser, uint256 assetAmount, uint256 shareAmount,) = vault.positions(positionIds[i]);
+            if (posUser == user) {
+                assets += assetAmount;
+                shares += shareAmount;
+            }
+        }
+    }
+
+    // Helper function to calculate total divestible shares for a user
+    function totalDivestibleShares(address user) public view returns (uint256) {
+        uint256[] memory positionIds = vault.positionsOfUser(user);
+        uint256 total = 0;
+        for (uint256 i = 0; i < positionIds.length; i++) {
+            total += vault.divestibleShares(positionIds[i]);
+        }
+        return total;
+    }
 }
+

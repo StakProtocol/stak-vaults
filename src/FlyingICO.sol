@@ -174,7 +174,17 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         _VESTING_END = vestingEnd_;
 
         emit FlyingICO__Initialized(
-            name_, symbol_, tokenCap_, tokensPerUsd_, acceptedAssets_, priceFeeds_, frequencies_, sequencer_, treasury_, vestingStart_, vestingEnd_
+            name_,
+            symbol_,
+            tokenCap_,
+            tokensPerUsd_,
+            acceptedAssets_,
+            priceFeeds_,
+            frequencies_,
+            sequencer_,
+            treasury_,
+            vestingStart_,
+            vestingEnd_
         );
     }
 
@@ -312,8 +322,13 @@ contract FlyingICO is ERC20, ERC20Burnable, ERC20Permit, ReentrancyGuard {
         backingBalances[asset] += assetAmount;
         // create position
         positionId = nextPositionId++;
-        positions[positionId] =
-            Position({user: msg.sender, asset: asset, assetAmount: assetAmount, tokenAmount: tokenAmount, vestingAmount: tokenAmount});
+        positions[positionId] = Position({
+            user: msg.sender,
+            asset: asset,
+            assetAmount: assetAmount,
+            tokenAmount: tokenAmount,
+            vestingAmount: tokenAmount
+        });
         positionsOf[msg.sender].push(positionId);
 
         emit FlyingICO__Invested(msg.sender, positionId, asset, assetAmount, tokenAmount);
