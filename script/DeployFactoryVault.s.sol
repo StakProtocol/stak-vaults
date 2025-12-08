@@ -2,15 +2,15 @@
 pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/src/Script.sol";
-import {FactoryStakeVault} from "../src/FactoryStakeVault.sol";
+import {FactoryStakVault} from "../src/FactoryStakVault.sol";
 
-contract DeployFactoryStakeVault is Script {
-    function run() public returns (FactoryStakeVault factory) {
-        // For simulation: forge script script/DeployFactoryStakeVault.s.sol:DeployFactoryStakeVault
-        // For deployment: forge script script/DeployFactoryStakeVault.s.sol:DeployFactoryStakeVault --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
+contract DeployFactoryStakVault is Script {
+    function run() public returns (FactoryStakVault factory) {
+        // For simulation: forge script script/DeployFactoryStakVault.s.sol:DeployFactoryStakVault
+        // For deployment: forge script script/DeployFactoryStakVault.s.sol:DeployFactoryStakVault --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
         vm.startBroadcast();
 
-        factory = new FactoryStakeVault();
+        factory = new FactoryStakVault();
 
         vm.stopBroadcast();
 

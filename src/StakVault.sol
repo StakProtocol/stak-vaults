@@ -54,7 +54,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
 
     uint256 public nextPositionId;
     mapping(uint256 => Position) public positions; // positionId -> position
-    mapping(address => uint256[]) public positionsOf; // user -> positionsIds
+    mapping(address => uint256[]) private positionsOf; // user -> positionsIds
 
     /* ========================================================================
     * =============================== Events ================================

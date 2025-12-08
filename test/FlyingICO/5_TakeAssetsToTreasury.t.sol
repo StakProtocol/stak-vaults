@@ -124,7 +124,7 @@ contract FlyingICOTakeAssetsToTreasuryTest is BaseTest {
     function test_TakeAssetsToTreasury_RevertWhen_TransferFailed() public {
         // Create a treasury contract that rejects ETH
         RejectingTreasury rejectingTreasury = new RejectingTreasury();
-        
+
         // Deploy a new ICO with the rejecting treasury
         address[] memory acceptedAssets = new address[](1);
         acceptedAssets[0] = address(0);

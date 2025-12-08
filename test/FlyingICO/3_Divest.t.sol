@@ -139,7 +139,7 @@ contract FlyingICODivestTest is BaseTest {
     function test_Divest_RevertWhen_TransferFailed() public {
         // Create a user contract that rejects ETH
         RejectingUser rejectingUser = new RejectingUser();
-        
+
         // Deploy a new ICO
         address[] memory acceptedAssets = new address[](1);
         acceptedAssets[0] = address(0);
@@ -181,11 +181,11 @@ contract RejectingUser {
     receive() external payable {
         revert("Rejecting ETH");
     }
-    
+
     function investEther(address ico) external payable {
         FlyingICO(ico).investEther{value: msg.value}();
     }
-    
+
     function divest(address ico, uint256 positionId, uint256 tokens) external {
         FlyingICO(ico).divest(positionId, tokens);
     }
