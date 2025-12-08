@@ -120,5 +120,54 @@ contract FlyingICOTakeAssetsToTreasuryTest is BaseTest {
         vm.expectRevert(FlyingICO.FlyingICO__InsufficientAssetAmount.selector);
         ico.takeAssetsToTreasury(address(usdc), 100e6);
     }
+
+    function test_TakeAssetsToTreasury_RevertWhen_TransferFailed() public {
+        // Create a treasury contract that rejects ETH
+        RejectingTreasury rejectingTreasury = new RejectingTreasury();
+        
+        // Deploy a new ICO with the rejecting treasury
+        address[] memory acceptedAssets = new address[](1);
+        acceptedAssets[0] = address(0);
+
+        address[] memory priceFeeds = new address[](1);
+        priceFeeds[0] = address(ethPriceFeed);
+
+        uint256[] memory testFrequencies = new uint256[](1);
+        testFrequencies[0] = 1 hours;
+
+        FlyingICO testIco = new FlyingICO(
+            "Test",
+            "TEST",
+            TOKEN_CAP,
+            TOKENS_PER_USD,
+            acceptedAssets,
+            priceFeeds,
+            testFrequencies,
+            sequencer,
+            address(rejectingTreasury),
+            vestingStart,
+            vestingEnd
+        );
+
+        // Invest some ETH
+        vm.prank(user1);
+        testIco.investEther{value: 1 ether}();
+
+        // Unlock to make assets available
+        vm.prank(user1);
+        testIco.unlock(0, 10000e18);
+
+        // Try to take assets - should fail because treasury rejects ETH
+        vm.prank(address(rejectingTreasury));
+        vm.expectRevert(FlyingICO.FlyingICO__TransferFailed.selector);
+        testIco.takeAssetsToTreasury(address(0), 0.1 ether);
+    }
+}
+
+// Contract that rejects ETH transfers
+contract RejectingTreasury {
+    receive() external payable {
+        revert("Rejecting ETH");
+    }
 }
 

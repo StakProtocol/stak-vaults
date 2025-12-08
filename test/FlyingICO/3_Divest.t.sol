@@ -135,5 +135,59 @@ contract FlyingICODivestTest is BaseTest {
         assertGe(assetAmount, 2900000); // At least 2.9 USDC
         assertLe(assetAmount, 3000000); // At most 3 USDC
     }
+
+    function test_Divest_RevertWhen_TransferFailed() public {
+        // Create a user contract that rejects ETH
+        RejectingUser rejectingUser = new RejectingUser();
+        
+        // Deploy a new ICO
+        address[] memory acceptedAssets = new address[](1);
+        acceptedAssets[0] = address(0);
+
+        address[] memory priceFeeds = new address[](1);
+        priceFeeds[0] = address(ethPriceFeed);
+
+        uint256[] memory testFrequencies = new uint256[](1);
+        testFrequencies[0] = 1 hours;
+
+        FlyingICO testIco = new FlyingICO(
+            "Test",
+            "TEST",
+            TOKEN_CAP,
+            TOKENS_PER_USD,
+            acceptedAssets,
+            priceFeeds,
+            testFrequencies,
+            sequencer,
+            treasury,
+            vestingStart,
+            vestingEnd
+        );
+
+        // Invest ETH from the rejecting user
+        vm.deal(address(rejectingUser), 1 ether);
+        vm.prank(address(rejectingUser));
+        uint256 positionId = testIco.investEther{value: 1 ether}();
+
+        // Try to divest - should fail because user rejects ETH
+        vm.prank(address(rejectingUser));
+        vm.expectRevert(FlyingICO.FlyingICO__TransferFailed.selector);
+        testIco.divest(positionId, 10000e18);
+    }
+}
+
+// Contract that rejects ETH transfers
+contract RejectingUser {
+    receive() external payable {
+        revert("Rejecting ETH");
+    }
+    
+    function investEther(address ico) external payable {
+        FlyingICO(ico).investEther{value: msg.value}();
+    }
+    
+    function divest(address ico, uint256 positionId, uint256 tokens) external {
+        FlyingICO(ico).divest(positionId, tokens);
+    }
 }
 
