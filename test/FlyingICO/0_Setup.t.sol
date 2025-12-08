@@ -30,7 +30,7 @@ contract FlyingICOSetupTest is BaseTest {
         testFrequencies[1] = 1 hours;
         testFrequencies[2] = 1 hours;
 
-        vm.expectRevert(abi.encodeWithSelector(FlyingICO.InvalidArraysLength.selector, 2, 1, 3));
+        vm.expectRevert(abi.encodeWithSelector(FlyingICO.FlyingICO__InvalidArraysLength.selector, 2, 1, 3));
 
         new FlyingICO(
             "Flying Token",

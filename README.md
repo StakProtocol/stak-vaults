@@ -34,7 +34,8 @@ forge build
 Deploy the Factory contract:
 
 ```bash
-forge script script/DeployFactory.s.sol:DeployFactory --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
+forge script script/DeployFactoryFlying.s.sol --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
+forge script script/DeployFactoryVault.s.sol --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
 ```
 
 Use the Factory to deploy StakVault or FlyingICO instances.
