@@ -151,15 +151,19 @@ contract StakVaultEdgeTest is BaseTest {
         vault.deposit(1000e18, user1);
         vm.stopPrank();
 
+        uint256 ownerBalanceBefore = asset.balanceOf(owner);
+
         // Owner takes assets (this increases investedAssets)
         vm.prank(owner);
         vault.takeAssets(500e18);
 
-        // Balance should be reduced by the amount of assets taken
-        assertEq(vault.balanceOf(user1), 1000e18);
+        // Shares are still held by vault (before NAV is enabled)
+        assertEq(vault.balanceOf(address(vault)), 1000e18);
+        assertEq(vault.balanceOf(user1), 0);
+        // Asset balance should be reduced by the amount of assets taken
         assertEq(asset.balanceOf(address(vault)), 500e18);
-
-        assertEq(asset.balanceOf(owner), 500e18);
+        // Owner should have received the assets
+        assertEq(asset.balanceOf(owner), ownerBalanceBefore + 500e18);
     }
 
     function test_Divest_AfterPartialUnlock() public {

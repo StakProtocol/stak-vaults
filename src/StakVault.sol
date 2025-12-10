@@ -384,6 +384,9 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
             revert StakVault__ZeroValue();
         }
 
+        // Update backing balance
+        backingBalance += assetAmount;
+
         positionId = nextPositionId++;
         positions[positionId] = Position({
             user: msg.sender, assetAmount: assetAmount, shareAmount: shareAmount, vestingAmount: shareAmount
@@ -419,10 +422,17 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         position.shareAmount -= shareAmount;
         position.assetAmount -= assetAmount;
 
-        // if(!redeemsAtNav) // TODO: rethink this check
+        // Reduce vesting amount if before vesting starts
         if (block.timestamp < _VESTING_START) {
-            position.vestingAmount -= shareAmount;
+            if (position.vestingAmount >= shareAmount) {
+                position.vestingAmount -= shareAmount;
+            } else {
+                position.vestingAmount = 0;
+            }
         }
+
+        // Update backing balance
+        backingBalance -= assetAmount;
 
         emit StakVault__Divested(msg.sender, positionId, assetAmount, shareAmount);
     }
