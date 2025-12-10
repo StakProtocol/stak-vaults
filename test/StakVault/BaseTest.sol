@@ -57,7 +57,7 @@ contract BaseTest is Test {
 
     // Helper function to calculate ledger from positions
     function getLedger(address user) public view returns (uint256 assets, uint256 shares) {
-        uint256[] memory positionIds = vault.positionsOfUser(user);
+        uint256[] memory positionIds = vault.positionsOf(user);
         for (uint256 i = 0; i < positionIds.length; i++) {
             (address posUser, uint256 assetAmount, uint256 shareAmount,) = vault.positions(positionIds[i]);
             if (posUser == user) {
@@ -69,7 +69,7 @@ contract BaseTest is Test {
 
     // Helper function to calculate total divestible shares for a user
     function totalDivestibleShares(address user) public view returns (uint256) {
-        uint256[] memory positionIds = vault.positionsOfUser(user);
+        uint256[] memory positionIds = vault.positionsOf(user);
         uint256 total = 0;
         for (uint256 i = 0; i < positionIds.length; i++) {
             total += vault.divestibleShares(positionIds[i]);

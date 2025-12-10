@@ -28,7 +28,7 @@ contract FlyingICOInvestEtherTest is BaseTest {
         assertEq(ico.balanceOf(address(ico)), 20000e18);
         assertEq(ico.totalSupply(), 20000e18);
 
-        uint256[] memory positions = ico.positionsOfUser(user1);
+        uint256[] memory positions = ico.positionsOf(user1);
         assertEq(positions.length, 1);
         assertEq(positions[0], 0);
     }
@@ -43,7 +43,7 @@ contract FlyingICOInvestEtherTest is BaseTest {
         assertEq(positionId1, 0);
         assertEq(positionId2, 1);
 
-        uint256[] memory positions = ico.positionsOfUser(user1);
+        uint256[] memory positions = ico.positionsOf(user1);
         assertEq(positions.length, 2);
         assertEq(positions[0], 0);
         assertEq(positions[1], 1);

@@ -91,7 +91,7 @@ contract StakVaultGetterTest is BaseTest {
     }
 
     function test_PositionsOfUser_Empty() public view {
-        uint256[] memory positions = vault.positionsOfUser(user1);
+        uint256[] memory positions = vault.positionsOf(user1);
         assertEq(positions.length, 0);
     }
 
@@ -102,7 +102,7 @@ contract StakVaultGetterTest is BaseTest {
         vault.deposit(500e18, user1);
         vm.stopPrank();
 
-        uint256[] memory positions = vault.positionsOfUser(user1);
+        uint256[] memory positions = vault.positionsOf(user1);
         assertEq(positions.length, 2);
         assertEq(positions[0], 0);
         assertEq(positions[1], 1);
@@ -191,17 +191,6 @@ contract StakVaultGetterTest is BaseTest {
 
     function test_HighWaterMark() public view {
         assertEq(vault.highWaterMark(), 1e18);
-    }
-
-    function test_BackingBalance() public {
-        assertEq(vault.backingBalance(), 0);
-
-        vm.startPrank(user1);
-        asset.approve(address(vault), 1000e18);
-        vault.deposit(1000e18, user1);
-        vm.stopPrank();
-
-        assertEq(vault.backingBalance(), 1000e18);
     }
 
     function test_NextPositionId() public {

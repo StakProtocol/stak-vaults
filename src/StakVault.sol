@@ -52,9 +52,9 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     uint256 public backingBalance; // Backing assets held as backing for open PUTs
     uint256 public investedAssets; // Total assets managed by the vault
 
-    uint256 public nextPositionId;
+    uint256 public nextPositionId; // starts at 0
     mapping(uint256 => Position) public positions; // positionId -> position
-    mapping(address => uint256[]) private positionsOf; // user -> positionsIds
+    mapping(address => uint256[]) private _positionsOf; // user -> positionsIds
 
     /* ========================================================================
     * =============================== Events ================================
@@ -74,13 +74,13 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     event StakVault__AssetsTaken(uint256 assets);
     event StakVault__InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
     event StakVault__RedeemsAtNavEnabled();
-    event StakVault__Invested(address indexed user, uint256 positionId, uint256 assetAmount, uint256 shareAmount);
-    event StakVault__Divested(
-        address indexed user, uint256 positionId, uint256 sharesBurned, uint256 assetReturnedAmount
-    );
-    event StakVault__Unlocked(
-        address indexed user, uint256 positionId, uint256 sharesUnlocked, uint256 assetReleasedAmount
-    );
+    event StakVault__Invested(address indexed user, uint256 positionId, uint256 assets, uint256 shares);
+    event StakVault__Divested(address indexed user, uint256 positionId, uint256 assets, uint256 shares);
+    event StakVault__Unlocked(address indexed user, uint256 positionId, uint256 assets, uint256 shares);
+    event StakVault__Deposited(address indexed user, uint256 assets, uint256 shares);
+    event StakVault__Minted(address indexed user, uint256 assets, uint256 shares);
+    event StakVault__Redeemed(address indexed user, uint256 assets, uint256 shares);
+    event StakVault__Withdrawn(address indexed user, uint256 assets, uint256 shares);
 
     /* ========================================================================
     * =============================== Errors ================================
@@ -95,8 +95,8 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     error StakVault__InvalidTreasury(address treasury);
     error StakVault__InvalidVestingSchedule(uint256 currentTime, uint256 vestingStart, uint256 vestingEnd);
     error StakVault__InvalidDecimals(uint8 sharesDecimals, uint8 assetsDecimals);
-    error StakVault__InsufficientAssetAmount();
-    error StakVault__InsufficientBacking();
+    error StakVault__InsufficientAssetsInPosition();
+    error StakVault__InsufficientAssetsInVault();
     error StakVault__RedeemsAtNavNotEnabled();
     error StakVault__RedeemsAtNavAlreadyEnabled();
     error StakVault__VestingAmountNotRedeemable(address user, uint256 shares, uint256 availableShares);
@@ -152,6 +152,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     function takeAssets(uint256 assets) external onlyOwner {
         investedAssets += assets;
         IERC20(asset()).safeTransfer(owner(), assets);
+
         emit StakVault__AssetsTaken(assets);
     }
 
@@ -214,8 +215,8 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     /// @notice Get the positions of a user
     /// @param user the user to get the positions of
     /// @return positionsIds the ids of the positions of the user
-    function positionsOfUser(address user) external view returns (uint256[] memory) {
-        return positionsOf[user];
+    function positionsOf(address user) external view returns (uint256[] memory) {
+        return _positionsOf[user];
     }
 
     /**
@@ -263,6 +264,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     function deposit(uint256 assets, address receiver) public virtual override returns (uint256 shares) {
         if (redeemsAtNav) {
             shares = super.deposit(assets, receiver);
+            emit StakVault__Deposited(receiver, assets, shares);
         } else {
             shares = super.deposit(assets, address(this));
             _invest(assets, shares);
@@ -278,6 +280,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     function mint(uint256 shares, address receiver) public virtual override returns (uint256 assets) {
         if (redeemsAtNav) {
             assets = super.mint(shares, receiver);
+            emit StakVault__Minted(receiver, assets, shares);
         } else {
             assets = super.mint(shares, address(this));
             _invest(assets, shares);
@@ -289,14 +292,16 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
      * @param shares The shares to redeem
      * @param receiver The receiver of the assets
      * @param user The user of the shares
-     * @return The assets
+     * @return assets The assets to redeem
      */
-    function redeem(uint256 shares, address receiver, address user) public virtual override returns (uint256) {
+    function redeem(uint256 shares, address receiver, address user) public virtual override returns (uint256 assets) {
         if (!redeemsAtNav) {
             revert StakVault__RedeemsAtNavNotEnabled();
         }
 
-        return super.redeem(shares, receiver, user);
+        assets = super.redeem(shares, receiver, user);
+
+        emit StakVault__Redeemed(receiver, assets, shares);
     }
 
     /**
@@ -306,12 +311,14 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
      * @param user The user of the assets
      * @return shares The shares to withdraw
      */
-    function withdraw(uint256 assets, address receiver, address user) public virtual override returns (uint256) {
+    function withdraw(uint256 assets, address receiver, address user) public virtual override returns (uint256 shares) {
         if (!redeemsAtNav) {
             revert StakVault__RedeemsAtNavNotEnabled();
         }
 
-        return super.withdraw(assets, receiver, user);
+        shares = super.withdraw(assets, receiver, user);
+
+        emit StakVault__Withdrawn(receiver, assets, shares);
     }
 
     /* ========================================================================
@@ -342,7 +349,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         // Transfer asset back to user
         IERC20(asset()).safeTransfer(msg.sender, assetAmount);
 
-        emit StakVault__Divested(msg.sender, positionId, sharesToBurn, assetAmount);
+        emit StakVault__Divested(msg.sender, positionId, assetAmount, sharesToBurn);
     }
 
     /// @notice Unlock / Withdraw (unlock) some or all Shares from your Perpetual PUT. This invalidates the PUT on that portion forever,
@@ -360,7 +367,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         // Released backing becomes available for protocol operations:
         // Backing has been reduced above, so the released assets are now available
         // to the treasury for protocol operations
-        emit StakVault__Unlocked(msg.sender, positionId, sharesToUnlock, assetAmount);
+        emit StakVault__Unlocked(msg.sender, positionId, assetAmount, sharesToUnlock);
     }
 
     /* ========================================================================
@@ -377,14 +384,12 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
             revert StakVault__ZeroValue();
         }
 
-        backingBalance += assetAmount;
-
         positionId = nextPositionId++;
         positions[positionId] = Position({
             user: msg.sender, assetAmount: assetAmount, shareAmount: shareAmount, vestingAmount: shareAmount
         });
 
-        positionsOf[msg.sender].push(positionId);
+        _positionsOf[msg.sender].push(positionId);
 
         emit StakVault__Invested(msg.sender, positionId, assetAmount, shareAmount);
     }
@@ -419,8 +424,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
             position.vestingAmount -= shareAmount;
         }
 
-        // reduce backing
-        backingBalance -= assetAmount; // TODO: backing necessary?
+        emit StakVault__Divested(msg.sender, positionId, assetAmount, shareAmount);
     }
 
     /// @notice Internal function to compute the asset amount for a divestment
@@ -441,12 +445,11 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         }
 
         if (position.assetAmount < assetAmount) {
-            revert StakVault__InsufficientAssetAmount();
+            revert StakVault__InsufficientAssetsInPosition();
         }
 
-        if (backingBalance < assetAmount) {
-            // this happens if the owner takes more assets than the backing balance
-            revert StakVault__InsufficientBacking();
+        if (IERC20(asset()).balanceOf(address(this)) < assetAmount) {
+            revert StakVault__InsufficientAssetsInVault();
         }
     }
 

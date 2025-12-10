@@ -13,7 +13,7 @@ pragma solidity ^0.8.24;
     to protocol backing pool).
   - Vesting & Post-Vesting Behavior:
     - All minted Tokens are subject to a linear vesting schedule.
-    - Before vesting starts, 100% of tokens are divestable (BPS = 10000).
+    - Before vesting starts, 100% of tokens are divestable (_BPS = 10000).
     - During vesting, the divestable amount decreases linearly over time.
     - After the vesting period ends, the vesting rate becomes 0% and *all tokens remain locked*. Users cannot divest through the vesting mechanism anymore.
     - Post-vesting lockup prevents redemptions
@@ -39,9 +39,9 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
     // Constants ==============================================================
     // ========================================================================
 
-    address public constant ETH_ADDR = address(0);
-    uint256 public constant WAD = 1e18;
-    uint256 private constant BPS = 10_000; // 100%
+    address private constant _ETH_ADDR = address(0);
+    uint256 private constant _WAD = 1e18;
+    uint256 private constant _BPS = 10_000; // 100%
 
     uint256 private immutable _VESTING_START;
     uint256 private immutable _VESTING_END;
@@ -56,7 +56,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
 
     struct Position {
         address user; // owner of the position
-        address asset; // asset used at deposit (ETH_ADDR for native)
+        address asset; // asset used at deposit (_ETH_ADDR for native)
         uint256 assetAmount; // amount of original asset reserved (in asset decimals)
         uint256 tokenAmount; // amount of Tokens (in units) reserved and locked in PUT
         uint256 vestingAmount; // amount of Tokens (in units) that is vesting and not redeemable yet
@@ -132,7 +132,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
 
     uint256 public nextPositionId;
     mapping(uint256 => Position) public positions; // positionId -> position
-    mapping(address => uint256[]) public positionsOf; // user -> positionsIds
+    mapping(address => uint256[]) private _positionsOf; // user -> positionsIds
     mapping(address => uint256) public backingBalances; // Backing assets held as backing for open PUTs (asset -> amount)
     mapping(address => PriceFeed) public priceFeeds; // asset -> price feed (USD)
 
@@ -171,8 +171,8 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
             revert FlyingICO__InvalidVestingSchedule(block.timestamp, vestingStart_, vestingEnd_);
         }
 
-        _TOKENS_CAP = tokenCap_ * WAD;
-        _TOKENS_PER_USD = tokensPerUsd_ * WAD;
+        _TOKENS_CAP = tokenCap_ * _WAD;
+        _TOKENS_PER_USD = tokensPerUsd_ * _WAD;
         _TREASURY = treasury_;
         _SEQUENCER = sequencer_;
         _VESTING_START = vestingStart_;
@@ -200,7 +200,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
     /// @notice Invest ETH into the contract
     /// @return positionId the id of the position created
     function investEther() external payable nonReentrant returns (uint256 positionId) {
-        positionId = _invest(ETH_ADDR, msg.value);
+        positionId = _invest(_ETH_ADDR, msg.value);
     }
 
     /// @notice Invest an accepted ERC20 token. Caller must have approved this contract for `assetAmount`.
@@ -229,7 +229,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
         _burn(address(this), tokensToBurn);
 
         // Transfer asset back to user
-        if (positions[positionId].asset == ETH_ADDR) {
+        if (positions[positionId].asset == _ETH_ADDR) {
             // native ETH
             (bool sent,) = msg.sender.call{value: assetAmount}("");
 
@@ -273,7 +273,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
             revert FlyingICO__AssetNotAccepted(asset);
         }
 
-        if (asset == ETH_ADDR) {
+        if (asset == _ETH_ADDR) {
             uint256 availableEther = address(this).balance - backingBalances[asset];
 
             if (availableEther < assetAmount) {
@@ -298,8 +298,8 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
     /// @notice Get the positions of a user
     /// @param user the user to get the positions of
     /// @return positions the positions of the user
-    function positionsOfUser(address user) external view returns (uint256[] memory) {
-        return positionsOf[user];
+    function positionsOf(address user) external view returns (uint256[] memory) {
+        return _positionsOf[user];
     }
 
     // ========================================================================
@@ -334,7 +334,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
             tokenAmount: tokenAmount,
             vestingAmount: tokenAmount
         });
-        positionsOf[msg.sender].push(positionId);
+        _positionsOf[msg.sender].push(positionId);
 
         emit FlyingICO__Invested(msg.sender, positionId, asset, assetAmount, tokenAmount);
     }
@@ -382,7 +382,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
         }
 
         // Tokens to mint
-        tokenAmount = usdValue.mulDiv(_TOKENS_PER_USD, WAD, Math.Rounding.Floor);
+        tokenAmount = usdValue.mulDiv(_TOKENS_PER_USD, _WAD, Math.Rounding.Floor);
 
         if (tokenAmount == 0) {
             revert FlyingICO__ZeroTokenAmount();
@@ -433,14 +433,14 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
         uint256 feedUnits = 10 ** uint256(priceFeed.feed.decimals());
         uint256 assetUnits = 10 ** _getDecimals(asset);
 
-        usdValue = assetAmount.mulDiv(price * WAD, assetUnits * feedUnits, Math.Rounding.Floor);
+        usdValue = assetAmount.mulDiv(price * _WAD, assetUnits * feedUnits, Math.Rounding.Floor);
     }
 
     // Read ERC20 decimals
     /// @param token the token to get the decimals of
     /// @return decimals the decimals of the token
     function _getDecimals(address token) internal view returns (uint256) {
-        if (token == ETH_ADDR) return 18;
+        if (token == _ETH_ADDR) return 18;
 
         return uint256(IERC20Metadata(token).decimals());
     }
@@ -472,7 +472,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
      * @return The divestible shares (0 if vesting period has ended)
      */
     function divestibleTokens(uint256 positionId) public view returns (uint256) {
-        return vestingRate().mulDiv(positions[positionId].vestingAmount, BPS, Math.Rounding.Floor);
+        return vestingRate().mulDiv(positions[positionId].vestingAmount, _BPS, Math.Rounding.Floor);
     }
 
     /**
@@ -483,7 +483,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
      * - During vesting: Decreases linearly from 10000 to 0
      * - After vesting ends: 0 (0% - no shares redeemable via vesting)
      *
-     * @return The vesting rate as a percentage in BPS (10000 = 100%, 0 = 0%)
+     * @return The vesting rate as a percentage in _BPS (10000 = 100%, 0 = 0%)
      */
     function vestingRate() public view returns (uint256) {
         return _calculateVestingRate();
@@ -493,7 +493,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
      * @dev Calculates the current vesting rate based on the vesting schedule.
      *
      * This function implements the core vesting logic:
-     * 1. Pre-vesting: Returns 100% (BPS = 10000)
+     * 1. Pre-vesting: Returns 100% (_BPS = 10000)
      * 2. During vesting: Returns linearly decreasing rate
      * 3. Post-vesting: Returns 0% - THIS LOCKS ALL SHARES
      *
@@ -505,7 +505,7 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
      */
     function _calculateVestingRate() internal view returns (uint256) {
         if (block.timestamp < _VESTING_START) {
-            return BPS;
+            return _BPS;
         }
 
         if (block.timestamp > _VESTING_END) {
@@ -513,9 +513,9 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
         }
 
         //                vesting end - current time
-        // vesting rate = ---------------------------- x BPS
+        // vesting rate = ---------------------------- x _BPS
         //                vesting end - vesting start
 
-        return BPS.mulDiv(_VESTING_END - block.timestamp, _VESTING_END - _VESTING_START, Math.Rounding.Floor);
+        return _BPS.mulDiv(_VESTING_END - block.timestamp, _VESTING_END - _VESTING_START, Math.Rounding.Floor);
     }
 }

@@ -8,7 +8,7 @@ contract FlyingICOPositionsOfUserTest is BaseTest {
         vm.prank(user1);
         ico.investEther{value: 1 ether}();
 
-        uint256[] memory positions = ico.positionsOfUser(user1);
+        uint256[] memory positions = ico.positionsOf(user1);
         assertEq(positions.length, 1);
         assertEq(positions[0], 0);
     }
@@ -21,7 +21,7 @@ contract FlyingICOPositionsOfUserTest is BaseTest {
         ico.investERC20(address(usdc), 1000e6);
         vm.stopPrank();
 
-        uint256[] memory positions = ico.positionsOfUser(user1);
+        uint256[] memory positions = ico.positionsOf(user1);
         assertEq(positions.length, 3);
         assertEq(positions[0], 0);
         assertEq(positions[1], 1);
@@ -29,7 +29,7 @@ contract FlyingICOPositionsOfUserTest is BaseTest {
     }
 
     function test_PositionsOfUser_NoPositions() public view {
-        uint256[] memory positions = ico.positionsOfUser(user1);
+        uint256[] memory positions = ico.positionsOf(user1);
         assertEq(positions.length, 0);
     }
 
@@ -40,8 +40,8 @@ contract FlyingICOPositionsOfUserTest is BaseTest {
         vm.prank(user2);
         ico.investEther{value: 1 ether}();
 
-        uint256[] memory positions1 = ico.positionsOfUser(user1);
-        uint256[] memory positions2 = ico.positionsOfUser(user2);
+        uint256[] memory positions1 = ico.positionsOf(user1);
+        uint256[] memory positions2 = ico.positionsOf(user2);
 
         assertEq(positions1.length, 1);
         assertEq(positions1[0], 0);

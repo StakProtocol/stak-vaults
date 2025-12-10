@@ -40,7 +40,7 @@ contract StakVaultFuzzTest is BaseTest {
         vm.stopPrank();
 
         // Get position info
-        uint256[] memory positions = vault.positionsOfUser(user1);
+        uint256[] memory positions = vault.positionsOf(user1);
         uint256 positionId = positions[0];
 
         // Get divestible shares
@@ -70,7 +70,7 @@ contract StakVaultFuzzTest is BaseTest {
         vm.stopPrank();
 
         // Get position info
-        uint256[] memory positions = vault.positionsOfUser(user1);
+        uint256[] memory positions = vault.positionsOf(user1);
         uint256 positionId = positions[0];
 
         // Get position shares
@@ -103,7 +103,7 @@ contract StakVaultFuzzTest is BaseTest {
         vm.stopPrank();
 
         // Get position info
-        uint256[] memory positions = vault.positionsOfUser(user1);
+        uint256[] memory positions = vault.positionsOf(user1);
         uint256 positionId = positions[0];
 
         // Get vesting info

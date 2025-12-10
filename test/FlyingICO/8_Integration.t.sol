@@ -52,9 +52,9 @@ contract FlyingICOIntegrationTest is BaseTest {
         vm.stopPrank();
 
         // All should have positions
-        assertEq(ico.positionsOfUser(user1).length, 1);
-        assertEq(ico.positionsOfUser(user2).length, 1);
-        assertEq(ico.positionsOfUser(user3).length, 1);
+        assertEq(ico.positionsOf(user1).length, 1);
+        assertEq(ico.positionsOf(user2).length, 1);
+        assertEq(ico.positionsOf(user3).length, 1);
 
         // Total supply should be 50000 tokens (20000 + 20000 + 10000)
         assertEq(ico.totalSupply(), 50000e18);

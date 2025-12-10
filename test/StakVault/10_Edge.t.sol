@@ -144,20 +144,22 @@ contract StakVaultEdgeTest is BaseTest {
         assertEq(assetAmount, 1e18);
     }
 
-    function test_TakeAssets_ReducesBacking() public {
+    function test_TakeAssets_ReduceBalance() public {
         // Deposit
         vm.startPrank(user1);
         asset.approve(address(vault), 1000e18);
         vault.deposit(1000e18, user1);
         vm.stopPrank();
 
-        // Owner takes assets (this increases investedAssets, not backing)
+        // Owner takes assets (this increases investedAssets)
         vm.prank(owner);
         vault.takeAssets(500e18);
 
-        // Backing should remain the same
-        assertEq(vault.backingBalance(), 1000e18);
-        assertEq(vault.investedAssets(), 500e18);
+        // Balance should be reduced by the amount of assets taken
+        assertEq(vault.balanceOf(user1), 1000e18);
+        assertEq(asset.balanceOf(address(vault)), 500e18);
+
+        assertEq(asset.balanceOf(owner), 500e18);
     }
 
     function test_Divest_AfterPartialUnlock() public {
