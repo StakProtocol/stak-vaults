@@ -269,7 +269,8 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
             emit StakVault__Deposited(receiver, assets, shares);
         } else {
             shares = super.deposit(assets, address(this));
-            _invest(assets, shares);
+            uint256 positionId = _invest(assets, shares);
+            emit StakVault__Invested(msg.sender, positionId, assets, shares);
         }
     }
 
@@ -285,7 +286,8 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
             emit StakVault__Minted(receiver, assets, shares);
         } else {
             assets = super.mint(shares, address(this));
-            _invest(assets, shares);
+            uint256 positionId = _invest(assets, shares);
+            emit StakVault__Invested(msg.sender, positionId, assets, shares);
         }
     }
 
@@ -390,8 +392,6 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         });
 
         _positionsOf[msg.sender].push(positionId);
-
-        emit StakVault__Invested(msg.sender, positionId, assetAmount, shareAmount);
     }
 
     /// @notice Internal function to divest shares from a position
@@ -423,8 +423,6 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         if (block.timestamp < _VESTING_START) {
             position.vestingAmount -= shareAmount;
         }
-
-        emit StakVault__Divested(msg.sender, positionId, assetAmount, shareAmount);
     }
 
     /// @notice Internal function to compute the asset amount for a divestment

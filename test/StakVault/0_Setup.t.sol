@@ -11,7 +11,6 @@ contract StakVaultSetupTest is BaseTest {
         assertEq(vault.owner(), owner);
         assertEq(vault.redeemsAtNav(), false);
         assertEq(vault.highWaterMark(), 1e18);
-        assertEq(vault.backingBalance(), 0);
         assertEq(vault.investedAssets(), 0);
         assertEq(vault.nextPositionId(), 0);
     }

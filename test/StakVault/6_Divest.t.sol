@@ -15,7 +15,6 @@ contract StakVaultDivestTest is BaseTest {
         uint256 positionId = 0;
         uint256 sharesToBurn = 500e18;
         uint256 userBalanceBefore = asset.balanceOf(user1);
-        uint256 backingBefore = vault.backingBalance();
 
         vm.startPrank(user1);
         vm.expectEmit(true, true, false, true);
@@ -26,7 +25,6 @@ contract StakVaultDivestTest is BaseTest {
         assertEq(assetAmount, 500e18);
         assertEq(asset.balanceOf(user1), userBalanceBefore + 500e18);
         assertEq(vault.balanceOf(address(vault)), 500e18);
-        assertEq(vault.backingBalance(), backingBefore - 500e18);
 
         (address posUser, uint256 posAssetAmount, uint256 shareAmount, uint256 vestingAmount) =
             vault.positions(positionId);

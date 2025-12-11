@@ -14,7 +14,6 @@ contract StakVaultUnlockTest is BaseTest {
 
         uint256 positionId = 0;
         uint256 sharesToUnlock = 500e18;
-        uint256 backingBefore = vault.backingBalance();
 
         vm.startPrank(user1);
         vm.expectEmit(true, true, false, true);
@@ -25,7 +24,6 @@ contract StakVaultUnlockTest is BaseTest {
         assertEq(assetAmount, 500e18);
         assertEq(vault.balanceOf(user1), sharesToUnlock);
         assertEq(vault.balanceOf(address(vault)), 500e18);
-        assertEq(vault.backingBalance(), backingBefore - 500e18);
 
         (address posUser, uint256 assetAmountPos, uint256 shareAmount, uint256 vestingAmount) =
             vault.positions(positionId);

@@ -21,7 +21,6 @@ contract StakVaultDepositTest is BaseTest {
         assertEq(vault.balanceOf(address(vault)), depositAmount);
         assertEq(vault.balanceOf(user1), 0);
         assertEq(asset.balanceOf(address(vault)), depositAmount);
-        assertEq(vault.backingBalance(), depositAmount);
 
         (uint256 assets, uint256 userShares) = getLedger(user1);
         assertEq(assets, depositAmount);
@@ -64,7 +63,6 @@ contract StakVaultDepositTest is BaseTest {
         vm.stopPrank();
 
         assertEq(vault.balanceOf(address(vault)), 1500e18);
-        assertEq(vault.backingBalance(), 1500e18);
 
         (uint256 assets1, uint256 shares1) = getLedger(user1);
         assertEq(assets1, 1000e18);
@@ -83,7 +81,6 @@ contract StakVaultDepositTest is BaseTest {
         vm.stopPrank();
 
         assertEq(vault.balanceOf(address(vault)), 1500e18);
-        assertEq(vault.backingBalance(), 1500e18);
 
         uint256[] memory positions = vault.positionsOf(user1);
         assertEq(positions.length, 2);

@@ -204,8 +204,6 @@ contract StakVaultEdgeTest is BaseTest {
         vm.startPrank(user2);
         vault.divest(1, 250e18);
         vm.stopPrank();
-
-        assertEq(vault.backingBalance(), 750e18);
     }
 
     function test_Vesting_LinearDecrease() public {

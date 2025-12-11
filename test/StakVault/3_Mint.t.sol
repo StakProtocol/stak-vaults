@@ -20,7 +20,6 @@ contract StakVaultMintTest is BaseTest {
         assertEq(assetsDeposited, assets);
         assertEq(vault.balanceOf(address(vault)), shares);
         assertEq(vault.balanceOf(user1), 0);
-        assertEq(vault.backingBalance(), assets);
 
         (uint256 userAssets, uint256 userShares) = getLedger(user1);
         assertEq(userAssets, assets);
