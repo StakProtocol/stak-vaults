@@ -49,7 +49,6 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
 
     bool public redeemsAtNav; // Whether redemptions are enabled
     uint256 public highWaterMark; // High water mark of the vault for performance fees
-    uint256 public backingBalance; // Backing assets held as backing for open PUTs
     uint256 public investedAssets; // Total assets managed by the vault
 
     uint256 public nextPositionId; // starts at 0
@@ -234,7 +233,10 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
      * @return The divestible shares (0 if vesting period has ended)
      */
     function divestibleShares(uint256 positionId) public view returns (uint256) {
-        return vestingRate().mulDiv(positions[positionId].vestingAmount, BPS, Math.Rounding.Floor);
+        uint256 divestible = vestingRate().mulDiv(positions[positionId].vestingAmount, BPS, Math.Rounding.Floor);
+        uint256 takenShares = positions[positionId].vestingAmount - positions[positionId].shareAmount;
+
+        return divestible > takenShares ? (divestible - takenShares) : 0;
     }
 
     /**
@@ -353,7 +355,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     }
 
     /// @notice Unlock / Withdraw (unlock) some or all Shares from your Perpetual PUT. This invalidates the PUT on that portion forever,
-    /// and transfers Tokens to the user. The backing previously reserved becomes available for protocol operations.
+    /// and transfers Tokens to the user.
     /// @param positionId Id of the position created at invest
     /// @param sharesToUnlock amount of Shares (in Shares units) to unlock from that position
     /// @dev This function is used to claim some or all of your Perpetual PUT (unlock Shares from the position and receive asset at par)
@@ -364,8 +366,6 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         // The Shares are already minted and sitting in this contract
         _transfer(address(this), msg.sender, sharesToUnlock);
 
-        // Released backing becomes available for protocol operations:
-        // Backing has been reduced above, so the released assets are now available
         // to the treasury for protocol operations
         emit StakVault__Unlocked(msg.sender, positionId, assetAmount, sharesToUnlock);
     }
@@ -383,9 +383,6 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         if (assetAmount == 0) {
             revert StakVault__ZeroValue();
         }
-
-        // Update backing balance
-        backingBalance += assetAmount;
 
         positionId = nextPositionId++;
         positions[positionId] = Position({
@@ -424,15 +421,8 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
 
         // Reduce vesting amount if before vesting starts
         if (block.timestamp < _VESTING_START) {
-            if (position.vestingAmount >= shareAmount) {
-                position.vestingAmount -= shareAmount;
-            } else {
-                position.vestingAmount = 0;
-            }
+            position.vestingAmount -= shareAmount;
         }
-
-        // Update backing balance
-        backingBalance -= assetAmount;
 
         emit StakVault__Divested(msg.sender, positionId, assetAmount, shareAmount);
     }
