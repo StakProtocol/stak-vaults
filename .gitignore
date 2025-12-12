@@ -19,3 +19,6 @@ lcov.info
 
 # Soldeer
 /dependencies
+
+script/DeployTests.s.sol
+src/test-tokens/*

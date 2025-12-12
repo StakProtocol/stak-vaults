@@ -145,6 +145,309 @@ contract StakVaultGetterTest is BaseTest {
         assertEq(divestible, 0); // 0% after vesting
     }
 
+    function test_DivestibleShares_AfterPartialDivest_BeforeVesting() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Initially, all shares should be divestible
+        uint256 initialDivestible = vault.divestibleShares(0);
+        (,,, uint256 vestingAmount) = vault.positions(0);
+        assertEq(initialDivestible, vestingAmount); // 1000e18
+
+        // Divest half of the shares
+        vm.startPrank(user1);
+        vault.divest(0, 500e18);
+        vm.stopPrank();
+
+        // After divest, divestible should be reduced
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        (,, uint256 shareAmountAfter,) = vault.positions(0);
+        
+        // Divestible should equal remaining shares (since before vesting)
+        assertEq(divestibleAfter, shareAmountAfter);
+        assertEq(divestibleAfter, 500e18);
+    }
+
+    function test_DivestibleShares_AfterPartialUnlock_BeforeVesting() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Initially, all shares should be divestible
+        uint256 initialDivestible = vault.divestibleShares(0);
+        (,,, uint256 vestingAmount) = vault.positions(0);
+        assertEq(initialDivestible, vestingAmount);
+
+        // Unlock half of the shares
+        vm.startPrank(user1);
+        vault.unlock(0, 500e18);
+        vm.stopPrank();
+
+        // After unlock, divestible should be reduced
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        (,, uint256 shareAmountAfter,) = vault.positions(0);
+        
+        // Divestible should equal remaining shares (since before vesting)
+        assertEq(divestibleAfter, shareAmountAfter);
+        assertEq(divestibleAfter, 500e18);
+    }
+
+    function test_DivestibleShares_AfterDivestAndUnlock_BeforeVesting() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Divest some shares
+        vm.startPrank(user1);
+        vault.divest(0, 250e18);
+        vm.stopPrank();
+
+        // Unlock some shares
+        vm.startPrank(user1);
+        vault.unlock(0, 250e18);
+        vm.stopPrank();
+
+        // Check divestible after both operations
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        (,, uint256 shareAmountAfter,) = vault.positions(0);
+        
+        // Should equal remaining shares
+        assertEq(divestibleAfter, shareAmountAfter);
+        assertEq(divestibleAfter, 500e18);
+    }
+
+    function test_DivestibleShares_AfterPartialDivest_DuringVesting() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Move to middle of vesting period
+        vm.warp(vestingStart + 15 days);
+
+        // Get initial divestible (should be less than vestingAmount due to vesting)
+        uint256 initialDivestible = vault.divestibleShares(0);
+        (,,, uint256 vestingAmount) = vault.positions(0);
+        assertLt(initialDivestible, vestingAmount);
+        assertGt(initialDivestible, 0);
+
+        // Divest half of the divestible shares
+        uint256 sharesToDivest = initialDivestible / 2;
+        vm.startPrank(user1);
+        vault.divest(0, sharesToDivest);
+        vm.stopPrank();
+
+        // After divest, divestible should be reduced
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        
+        // Should be approximately half of initial (accounting for rounding)
+        assertLe(divestibleAfter, initialDivestible - sharesToDivest);
+        assertGt(divestibleAfter, 0);
+    }
+
+    function test_DivestibleShares_AfterPartialUnlock_DuringVesting() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Move to middle of vesting period
+        vm.warp(vestingStart + 15 days);
+
+        // Get initial divestible
+        uint256 initialDivestible = vault.divestibleShares(0);
+        assertGt(initialDivestible, 0);
+
+        // Unlock some shares (less than divestible)
+        uint256 sharesToUnlock = initialDivestible / 2;
+        vm.startPrank(user1);
+        vault.unlock(0, sharesToUnlock);
+        vm.stopPrank();
+
+        // After unlock, divestible should be reduced
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        
+        // Should be less than initial
+        assertLt(divestibleAfter, initialDivestible);
+        assertGt(divestibleAfter, 0);
+    }
+
+    function test_DivestibleShares_AfterAllSharesDivested() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Divest all shares
+        vm.startPrank(user1);
+        vault.divest(0, 1000e18);
+        vm.stopPrank();
+
+        // After all shares divested, divestible should be 0
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        assertEq(divestibleAfter, 0);
+    }
+
+    function test_DivestibleShares_AfterAllSharesUnlocked() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Unlock all shares
+        vm.startPrank(user1);
+        vault.unlock(0, 1000e18);
+        vm.stopPrank();
+
+        // After all shares unlocked, divestible should be 0
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        assertEq(divestibleAfter, 0);
+    }
+
+    function test_DivestibleShares_AfterVestingEnds_WithPartialDivest() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Divest some shares before vesting ends
+        vm.startPrank(user1);
+        vault.divest(0, 500e18);
+        vm.stopPrank();
+
+        // Move after vesting ends
+        vm.warp(vestingEnd + 1 days);
+
+        // After vesting ends, divestible should be 0 regardless of remaining shares
+        uint256 divestible = vault.divestibleShares(0);
+        assertEq(divestible, 0);
+    }
+
+    function test_DivestibleShares_EdgeCase_AllDivestibleTaken() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Move to middle of vesting
+        vm.warp(vestingStart + 15 days);
+
+        // Get divestible amount
+        uint256 divestible = vault.divestibleShares(0);
+        assertGt(divestible, 0);
+
+        // Divest all divestible shares
+        vm.startPrank(user1);
+        vault.divest(0, divestible);
+        vm.stopPrank();
+
+        // After divesting all divestible, should be 0
+        uint256 divestibleAfter = vault.divestibleShares(0);
+        assertEq(divestibleAfter, 0);
+    }
+
+    function test_DivestibleShares_EdgeCase_MoreThanDivestibleUnlocked() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Move to middle of vesting
+        vm.warp(vestingStart + 15 days);
+
+        // Get divestible amount
+        uint256 divestible = vault.divestibleShares(0);
+        assertGt(divestible, 0);
+
+        // Unlock more than divestible (but less than total shares)
+        // This should work because unlock doesn't check divestible amount
+        uint256 sharesToUnlock = divestible + 100e18;
+        (,, uint256 shareAmount,) = vault.positions(0);
+        if (sharesToUnlock <= shareAmount) {
+            vm.startPrank(user1);
+            vault.unlock(0, sharesToUnlock);
+            vm.stopPrank();
+
+            // After unlocking more than divestible, divestible should be 0
+            uint256 divestibleAfter = vault.divestibleShares(0);
+            assertEq(divestibleAfter, 0);
+        }
+    }
+
+    function test_DivestibleShares_Calculation_WithTakenShares() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Move to middle of vesting
+        vm.warp(vestingStart + 15 days);
+
+        // Get initial values
+        uint256 vestingRate = vault.vestingRate();
+        (,,, uint256 vestingAmount) = vault.positions(0);
+        
+        // Calculate expected divestible: vestingRate * vestingAmount / BPS
+        uint256 expectedDivestible = vestingRate * vestingAmount / 10000;
+        uint256 actualDivestible = vault.divestibleShares(0);
+        
+        // Should match (accounting for rounding)
+        assertEq(actualDivestible, expectedDivestible);
+
+        // Divest some shares
+        uint256 sharesToDivest = actualDivestible / 2;
+        vm.startPrank(user1);
+        vault.divest(0, sharesToDivest);
+        vm.stopPrank();
+
+        // Recalculate after divest
+        (,, uint256 shareAmountAfter,) = vault.positions(0);
+        uint256 takenShares = vestingAmount - shareAmountAfter;
+        uint256 expectedDivestibleAfter = expectedDivestible > takenShares ? (expectedDivestible - takenShares) : 0;
+        uint256 actualDivestibleAfter = vault.divestibleShares(0);
+
+        assertEq(actualDivestibleAfter, expectedDivestibleAfter);
+    }
+
+    function test_DivestibleShares_MultipleOperations() public {
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Operation 1: Divest
+        vm.startPrank(user1);
+        vault.divest(0, 250e18);
+        vm.stopPrank();
+        uint256 divestible1 = vault.divestibleShares(0);
+        assertEq(divestible1, 750e18);
+
+        // Operation 2: Unlock
+        vm.startPrank(user1);
+        vault.unlock(0, 250e18);
+        vm.stopPrank();
+        uint256 divestible2 = vault.divestibleShares(0);
+        assertEq(divestible2, 500e18);
+
+        // Operation 3: Divest again
+        vm.startPrank(user1);
+        vault.divest(0, 250e18);
+        vm.stopPrank();
+        uint256 divestible3 = vault.divestibleShares(0);
+        assertEq(divestible3, 250e18);
+
+        // Operation 4: Unlock remaining
+        vm.startPrank(user1);
+        vault.unlock(0, 250e18);
+        vm.stopPrank();
+        uint256 divestible4 = vault.divestibleShares(0);
+        assertEq(divestible4, 0);
+    }
+
     function test_VestingRate_BeforeVesting() public view {
         uint256 rate = vault.vestingRate();
         assertEq(rate, 10000); // 100%

@@ -122,9 +122,6 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
         address assetReleased,
         uint256 assetReleasedAmount
     );
-    event FlyingICO__BuybackAndBurn(
-        address indexed caller, address assetUsed, uint256 assetAmountUsed, uint256 tokensBurned
-    );
 
     // ========================================================================
     // State Variables ========================================================
@@ -472,7 +469,10 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
      * @return The divestible shares (0 if vesting period has ended)
      */
     function divestibleTokens(uint256 positionId) public view returns (uint256) {
-        return vestingRate().mulDiv(positions[positionId].vestingAmount, _BPS, Math.Rounding.Floor);
+        uint256 divestible = vestingRate().mulDiv(positions[positionId].vestingAmount, _BPS, Math.Rounding.Floor);
+        uint256 takenTokens = positions[positionId].vestingAmount - positions[positionId].tokenAmount;
+
+        return divestible > takenTokens ? (divestible - takenTokens) : 0;
     }
 
     /**
