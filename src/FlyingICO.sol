@@ -122,6 +122,10 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
         address assetReleased,
         uint256 assetReleasedAmount
     );
+    event FlyingICO__AssetsTakenToTreasury(
+        address indexed asset,
+        uint256 assetAmount
+    );
 
     // ========================================================================
     // State Variables ========================================================
@@ -290,6 +294,8 @@ contract FlyingICO is ERC20, ERC20Permit, ReentrancyGuard {
 
             IERC20(asset).safeTransfer(_TREASURY, assetAmount);
         }
+
+        emit FlyingICO__AssetsTakenToTreasury(asset, assetAmount);
     }
 
     /// @notice Get the positions of a user
