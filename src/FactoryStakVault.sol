@@ -15,11 +15,13 @@ contract FactoryStakVault {
         address treasury,
         uint256 performanceRate,
         uint256 vestingStart,
-        uint256 vestingEnd
+        uint256 vestingEnd,
+        uint256 startingPrice,
+        uint256 divestFee
     ) external returns (address) {
         // deploy the stak vault
         address stakVault = address(
-            new StakVault(IERC20(asset), name, symbol, owner, treasury, performanceRate, vestingStart, vestingEnd)
+            new StakVault(IERC20(asset), name, symbol, owner, treasury, performanceRate, vestingStart, vestingEnd, startingPrice, divestFee)
         );
 
         emit Factory__StakVaultCreated(stakVault);

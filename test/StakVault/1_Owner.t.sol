@@ -32,8 +32,15 @@ contract StakVaultOwnerTest is BaseTest {
     }
 
     function test_UpdateInvestedAssets_Success_NoPerformanceFee() public {
-        // Set invested assets when price hasn't increased
-        uint256 newInvestedAssets = 1000e18;
+        // First deposit to have some balance
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Set invested assets to the same value as highWaterMark (10e18) so no performance fee
+        // This won't trigger a fee since price per share won't increase
+        uint256 newInvestedAssets = 10e18; // Same as initial highWaterMark
         uint256 treasuryBalanceBefore = asset.balanceOf(treasury);
 
         vm.prank(owner);
@@ -65,7 +72,7 @@ contract StakVaultOwnerTest is BaseTest {
         // Performance fee should be calculated and transferred
         assertEq(vault.investedAssets(), newInvestedAssets);
         assertGt(asset.balanceOf(treasury), treasuryBalanceBefore);
-        assertGt(vault.highWaterMark(), 1e18);
+        assertGt(vault.highWaterMark(), 10e18);
     }
 
     function test_UpdateInvestedAssets_RevertWhen_NotOwner() public {
@@ -136,7 +143,7 @@ contract StakVaultOwnerTest is BaseTest {
         // High water mark should not change (no performance fee on loss)
         // But the actual high water mark might be calculated differently
         // Let's just check it's at least the initial value
-        assertGe(vault.highWaterMark(), 1e18);
+        assertGe(vault.highWaterMark(), 10e18);
     }
 }
 

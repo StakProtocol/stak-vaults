@@ -31,7 +31,7 @@ contract BaseTest is Test {
     event StakVault__RedeemsAtNavEnabled();
     event StakVault__Invested(address indexed user, uint256 positionId, uint256 assetAmount, uint256 shareAmount);
     event StakVault__Divested(
-        address indexed user, uint256 positionId, uint256 sharesBurned, uint256 assetReturnedAmount
+        address indexed user, uint256 positionId, uint256 assetAmount, uint256 shares, uint256 fee
     );
     event StakVault__Unlocked(
         address indexed user, uint256 positionId, uint256 sharesUnlocked, uint256 assetReleasedAmount
@@ -45,7 +45,7 @@ contract BaseTest is Test {
 
         vm.prank(owner);
         vault = new StakVault(
-            IERC20(address(asset)), "Vault Token", "VAULT", owner, treasury, PERFORMANCE_RATE, vestingStart, vestingEnd
+            IERC20(address(asset)), "Vault Token", "VAULT", owner, treasury, PERFORMANCE_RATE, vestingStart, vestingEnd, 10e18, 0
         );
 
         // Give users some tokens

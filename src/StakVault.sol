@@ -31,6 +31,7 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     uint256 private immutable _PERFORMANCE_RATE;
     uint256 private immutable _VESTING_START;
     uint256 private immutable _VESTING_END;
+    uint256 private immutable _DIVEST_FEE;
 
     // ========================================================================
     // Structs ===============================================================
@@ -68,13 +69,16 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         address indexed treasury,
         uint256 performanceRate,
         uint256 vestingStart,
-        uint256 vestingEnd
+        uint256 vestingEnd,
+        uint256 startingPrice,
+        uint256 divestFee
     );
     event StakVault__AssetsTaken(uint256 assets);
+    event StakVault__AssetsReturned(uint256 assets);
     event StakVault__InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
     event StakVault__RedeemsAtNavEnabled();
     event StakVault__Invested(address indexed user, uint256 positionId, uint256 assets, uint256 shares);
-    event StakVault__Divested(address indexed user, uint256 positionId, uint256 assets, uint256 shares);
+    event StakVault__Divested(address indexed user, uint256 positionId, uint256 assets, uint256 shares, uint256 fee);
     event StakVault__Unlocked(address indexed user, uint256 positionId, uint256 assets, uint256 shares);
     event StakVault__Deposited(address indexed user, uint256 assets, uint256 shares);
     event StakVault__Minted(address indexed user, uint256 assets, uint256 shares);
@@ -113,7 +117,9 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         address treasury_,
         uint256 performanceRate_,
         uint256 vestingStart_,
-        uint256 vestingEnd_
+        uint256 vestingEnd_,
+        uint256 startingPrice_,
+        uint256 divestFee_
     ) ERC20(name_, symbol_) ERC4626(asset_) Ownable(owner_) {
         if (performanceRate_ > MAX_PERFORMANCE_RATE) {
             revert StakVault__InvalidPerformanceRate(performanceRate_);
@@ -132,15 +138,22 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
             revert StakVault__InvalidVestingSchedule(block.timestamp, vestingStart_, vestingEnd_);
         }
 
-        highWaterMark = 10 ** decimals();
+        // Initialize vault at 10 assets per share by:
+        // 1. Minting 1 initial share (10^decimals) to address(1) (dead address)
+        // 2. Setting investedAssets to 10 * (10 ** decimals()) so totalAssets = 10 * (10 ** decimals())
+        // 3. Setting highWaterMark to 10 * (10 ** decimals()) to match initial price
+        _mint(address(1), 10 ** decimals());
+        investedAssets = startingPrice_;
+        highWaterMark = startingPrice_;
 
         _TREASURY = treasury_;
         _PERFORMANCE_RATE = performanceRate_;
         _VESTING_START = vestingStart_;
         _VESTING_END = vestingEnd_;
+        _DIVEST_FEE = divestFee_;
 
         emit StakVault__Initialized(
-            address(asset_), name_, symbol_, owner_, treasury_, performanceRate_, vestingStart_, vestingEnd_
+            address(asset_), name_, symbol_, owner_, treasury_, performanceRate_, vestingStart_, vestingEnd_, startingPrice_, divestFee_
         );
     }
 
@@ -153,6 +166,13 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
         IERC20(asset()).safeTransfer(owner(), assets);
 
         emit StakVault__AssetsTaken(assets);
+    }
+
+    function returnAssets(uint256 assets) external onlyOwner {
+        investedAssets -= assets;
+        IERC20(asset()).safeTransferFrom(owner(), address(this), assets);
+
+        emit StakVault__AssetsReturned(assets);
     }
 
     /**
@@ -199,16 +219,6 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
      */
     function totalAssets() public view virtual override returns (uint256) {
         return super.totalAssets() + investedAssets;
-    }
-
-    /**
-     * @dev Returns the utilization rate of the vault.
-     * @return The utilization rate as a percentage in BPS (10000 = 100%)
-     */
-    function utilizationRate() public view returns (uint256) {
-        uint256 _totalAssets = totalAssets();
-        if (_totalAssets == 0) return 0;
-        return BPS.mulDiv(investedAssets, _totalAssets, Math.Rounding.Floor);
     }
 
     /// @notice Get the positions of a user
@@ -350,10 +360,15 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
 
         _burn(address(this), sharesToBurn);
 
-        // Transfer asset back to user
-        IERC20(asset()).safeTransfer(msg.sender, assetAmount);
+        // Transfer divest fee to treasury
+        uint256 divestFee = assetAmount.mulDiv(_DIVEST_FEE, BPS, Math.Rounding.Ceil);
+        IERC20(asset()).safeTransfer(_TREASURY, divestFee);
 
-        emit StakVault__Divested(msg.sender, positionId, assetAmount, sharesToBurn);
+        // Transfer asset back to user
+        uint256 assetsAfterFee = assetAmount - divestFee;
+        IERC20(asset()).safeTransfer(msg.sender, assetsAfterFee);
+
+        emit StakVault__Divested(msg.sender, positionId, assetAmount, sharesToBurn, divestFee);
     }
 
     /// @notice Unlock / Withdraw (unlock) some or all Shares from your Perpetual PUT. This invalidates the PUT on that portion forever,

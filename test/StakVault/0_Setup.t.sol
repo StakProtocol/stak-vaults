@@ -10,16 +10,17 @@ contract StakVaultSetupTest is BaseTest {
     function test_Constructor_Success() public view {
         assertEq(vault.owner(), owner);
         assertEq(vault.redeemsAtNav(), false);
-        assertEq(vault.highWaterMark(), 1e18);
-        assertEq(vault.investedAssets(), 0);
+        assertEq(vault.highWaterMark(), 10e18);
+        assertEq(vault.investedAssets(), 10e18);
         assertEq(vault.nextPositionId(), 0);
+        assertEq(vault.totalSupply(), 1e18); // 1 initial share (1e18) minted to address(1)
     }
 
     function test_Constructor_RevertWhen_InvalidPerformanceRate() public {
         vm.expectRevert(abi.encodeWithSelector(StakVault.StakVault__InvalidPerformanceRate.selector, 6000));
 
         vm.prank(owner);
-        new StakVault(IERC20(address(asset)), "Vault", "VAULT", owner, treasury, 6000, vestingStart, vestingEnd);
+        new StakVault(IERC20(address(asset)), "Vault", "VAULT", owner, treasury, 6000, vestingStart, vestingEnd, 10e18, 0);
     }
 
     function test_Constructor_RevertWhen_InvalidTreasury() public {
@@ -27,7 +28,7 @@ contract StakVaultSetupTest is BaseTest {
 
         vm.prank(owner);
         new StakVault(
-            IERC20(address(asset)), "Vault", "VAULT", owner, address(0), PERFORMANCE_RATE, vestingStart, vestingEnd
+            IERC20(address(asset)), "Vault", "VAULT", owner, address(0), PERFORMANCE_RATE, vestingStart, vestingEnd, 10e18, 0
         );
     }
 
@@ -48,7 +49,7 @@ contract StakVaultSetupTest is BaseTest {
         );
 
         vm.prank(owner);
-        new StakVault(IERC20(address(asset)), "Vault", "VAULT", owner, treasury, PERFORMANCE_RATE, pastStart, futureEnd);
+        new StakVault(IERC20(address(asset)), "Vault", "VAULT", owner, treasury, PERFORMANCE_RATE, pastStart, futureEnd, 10e18, 0);
     }
 
     function test_Constructor_RevertWhen_InvalidVestingSchedule_EndBeforeStart() public {
@@ -60,7 +61,7 @@ contract StakVaultSetupTest is BaseTest {
 
         vm.prank(owner);
         new StakVault(
-            IERC20(address(asset)), "Vault", "VAULT", owner, treasury, PERFORMANCE_RATE, vestingEnd, vestingStart
+            IERC20(address(asset)), "Vault", "VAULT", owner, treasury, PERFORMANCE_RATE, vestingEnd, vestingStart, 10e18, 0
         );
     }
 
@@ -86,7 +87,9 @@ contract StakVaultSetupTest is BaseTest {
             treasury,
             PERFORMANCE_RATE,
             vestingStart,
-            vestingEnd
+            vestingEnd,
+            10e18,
+            0
         );
 
         // Verify the vault has 6 decimals (matching the asset)
@@ -96,7 +99,7 @@ contract StakVaultSetupTest is BaseTest {
     function test_Constructor_AcceptsMaxPerformanceRate() public {
         vm.prank(owner);
         StakVault maxRateVault = new StakVault(
-            IERC20(address(asset)), "Vault", "VAULT", owner, treasury, MAX_PERFORMANCE_RATE, vestingStart, vestingEnd
+            IERC20(address(asset)), "Vault", "VAULT", owner, treasury, MAX_PERFORMANCE_RATE, vestingStart, vestingEnd, 10e18, 0
         );
 
         assertEq(maxRateVault.owner(), owner);
@@ -105,7 +108,7 @@ contract StakVaultSetupTest is BaseTest {
     function test_Constructor_AcceptsZeroPerformanceRate() public {
         vm.prank(owner);
         StakVault zeroRateVault =
-            new StakVault(IERC20(address(asset)), "Vault", "VAULT", owner, treasury, 0, vestingStart, vestingEnd);
+            new StakVault(IERC20(address(asset)), "Vault", "VAULT", owner, treasury, 0, vestingStart, vestingEnd, 10e18, 0);
 
         assertEq(zeroRateVault.owner(), owner);
     }
