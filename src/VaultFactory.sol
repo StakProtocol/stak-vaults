@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {StakVault} from "./StakVault.sol";
 
-contract FactoryStakVault {
-    event Factory__StakVaultCreated(address indexed stakVault);
+contract VaultFactory {
+    event VaultFactory__VaultCreated(address indexed vault);
 
     function createStakVault(
         address asset,
@@ -20,12 +20,12 @@ contract FactoryStakVault {
         uint256 divestFee
     ) external returns (address) {
         // deploy the stak vault
-        address stakVault = address(
+        address vault = address(
             new StakVault(IERC20(asset), name, symbol, owner, treasury, performanceRate, vestingStart, vestingEnd, startingPrice, divestFee)
         );
 
-        emit Factory__StakVaultCreated(stakVault);
+        emit VaultFactory__VaultCreated(vault);
 
-        return stakVault;
+        return vault;
     }
 }
