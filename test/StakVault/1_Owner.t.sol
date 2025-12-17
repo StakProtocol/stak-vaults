@@ -145,5 +145,176 @@ contract StakVaultOwnerTest is BaseTest {
         // Let's just check it's at least the initial value
         assertGe(vault.highWaterMark(), 10e18);
     }
+
+    function test_ReturnAssets_Success() public {
+        // First deposit some assets
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Owner takes assets first
+        uint256 assetsToTake = 500e18;
+        vm.prank(owner);
+        vault.takeAssets(assetsToTake);
+
+        // Now owner returns assets
+        uint256 assetsToReturn = 300e18;
+        uint256 ownerBalanceBefore = asset.balanceOf(owner);
+        uint256 vaultBalanceBefore = asset.balanceOf(address(vault));
+        uint256 investedAssetsBefore = vault.investedAssets();
+
+        // Owner needs to approve the vault to transfer assets back
+        vm.startPrank(owner);
+        asset.approve(address(vault), assetsToReturn);
+        vm.expectEmit(true, false, false, true);
+        emit StakVault__AssetsReturned(assetsToReturn);
+        vault.returnAssets(assetsToReturn);
+        vm.stopPrank();
+
+        assertEq(asset.balanceOf(owner), ownerBalanceBefore - assetsToReturn);
+        assertEq(asset.balanceOf(address(vault)), vaultBalanceBefore + assetsToReturn);
+        assertEq(vault.investedAssets(), investedAssetsBefore - assetsToReturn);
+    }
+
+    function test_ReturnAssets_RevertWhen_NotOwner() public {
+        // First deposit some assets
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Owner takes assets first
+        uint256 assetsToTake = 500e18;
+        vm.prank(owner);
+        vault.takeAssets(assetsToTake);
+
+        // Non-owner tries to return assets
+        uint256 assetsToReturn = 100e18;
+        vm.startPrank(user1);
+        asset.approve(address(vault), assetsToReturn);
+        vm.expectRevert();
+        vault.returnAssets(assetsToReturn);
+        vm.stopPrank();
+    }
+
+    function test_ReturnAssets_AfterTakeAssets() public {
+        // First deposit some assets
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        uint256 initialInvestedAssets = vault.investedAssets();
+        uint256 assetsToTake = 500e18;
+
+        // Owner takes assets
+        vm.prank(owner);
+        vault.takeAssets(assetsToTake);
+
+        assertEq(vault.investedAssets(), initialInvestedAssets + assetsToTake);
+
+        // Owner returns some assets
+        uint256 assetsToReturn = 200e18;
+        vm.startPrank(owner);
+        asset.approve(address(vault), assetsToReturn);
+        vault.returnAssets(assetsToReturn);
+        vm.stopPrank();
+
+        assertEq(vault.investedAssets(), initialInvestedAssets + assetsToTake - assetsToReturn);
+    }
+
+    function test_ReturnAssets_CompleteRoundTrip() public {
+        // First deposit some assets
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        uint256 initialInvestedAssets = vault.investedAssets();
+        uint256 assetsToTake = 500e18;
+
+        // Owner takes assets
+        vm.prank(owner);
+        vault.takeAssets(assetsToTake);
+
+        // Owner returns all assets back
+        vm.startPrank(owner);
+        asset.approve(address(vault), assetsToTake);
+        vault.returnAssets(assetsToTake);
+        vm.stopPrank();
+
+        // Should be back to initial state
+        assertEq(vault.investedAssets(), initialInvestedAssets);
+    }
+
+    function test_ReturnAssets_UpdatesTotalAssets() public {
+        // First deposit some assets
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 assetsToTake = 500e18;
+
+        // Owner takes assets
+        // When taking assets: balance decreases, investedAssets increases
+        // totalAssets = balance + investedAssets stays the same
+        vm.prank(owner);
+        vault.takeAssets(assetsToTake);
+
+        uint256 totalAssetsAfterTake = vault.totalAssets();
+        assertEq(totalAssetsAfterTake, totalAssetsBefore);
+
+        // Owner returns assets
+        // When returning assets: balance increases, investedAssets decreases
+        // totalAssets = balance + investedAssets stays the same
+        uint256 assetsToReturn = 300e18;
+        vm.startPrank(owner);
+        asset.approve(address(vault), assetsToReturn);
+        vault.returnAssets(assetsToReturn);
+        vm.stopPrank();
+
+        uint256 totalAssetsAfterReturn = vault.totalAssets();
+        // totalAssets should still be the same since balance and investedAssets offset each other
+        assertEq(totalAssetsAfterReturn, totalAssetsBefore);
+        
+        // But investedAssets should have changed
+        assertEq(vault.investedAssets(), 10e18 + assetsToTake - assetsToReturn);
+    }
+
+    function test_ReturnAssets_MultipleReturns() public {
+        // First deposit some assets
+        vm.startPrank(user1);
+        asset.approve(address(vault), 1000e18);
+        vault.deposit(1000e18, user1);
+        vm.stopPrank();
+
+        // Owner takes assets
+        uint256 assetsToTake = 500e18;
+        vm.prank(owner);
+        vault.takeAssets(assetsToTake);
+
+        uint256 investedAssetsAfterTake = vault.investedAssets();
+
+        // Owner returns assets in multiple transactions
+        uint256 firstReturn = 200e18;
+        uint256 secondReturn = 150e18;
+        uint256 thirdReturn = 100e18;
+
+        vm.startPrank(owner);
+        asset.approve(address(vault), assetsToTake);
+
+        vault.returnAssets(firstReturn);
+        assertEq(vault.investedAssets(), investedAssetsAfterTake - firstReturn);
+
+        vault.returnAssets(secondReturn);
+        assertEq(vault.investedAssets(), investedAssetsAfterTake - firstReturn - secondReturn);
+
+        vault.returnAssets(thirdReturn);
+        assertEq(vault.investedAssets(), investedAssetsAfterTake - firstReturn - secondReturn - thirdReturn);
+        vm.stopPrank();
+    }
 }
 

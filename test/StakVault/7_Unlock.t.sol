@@ -164,8 +164,8 @@ contract StakVaultUnlockTest is BaseTest {
         // Create two positions
         vm.startPrank(user1);
         asset.approve(address(vault), 2000e18);
-        uint256 shares1 = vault.deposit(1000e18, user1);
-        uint256 shares2 = vault.deposit(500e18, user1);
+        vault.deposit(1000e18, user1);
+        vault.deposit(500e18, user1);
         vm.stopPrank();
 
         // Get actual share amounts

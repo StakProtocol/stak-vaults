@@ -169,7 +169,12 @@ contract StakVault is ERC4626, Ownable, ReentrancyGuard {
     }
 
     function returnAssets(uint256 assets) external onlyOwner {
-        investedAssets -= assets;
+        if (assets <= investedAssets) {
+            investedAssets -= assets;
+        } else {
+            investedAssets = 0;
+        }
+
         IERC20(asset()).safeTransferFrom(owner(), address(this), assets);
 
         emit StakVault__AssetsReturned(assets);

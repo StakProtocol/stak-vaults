@@ -27,6 +27,7 @@ contract BaseTest is Test {
 
     // Events
     event StakVault__AssetsTaken(uint256 assets);
+    event StakVault__AssetsReturned(uint256 assets);
     event StakVault__InvestedAssetsUpdated(uint256 newInvestedAssets, uint256 performanceFee);
     event StakVault__RedeemsAtNavEnabled();
     event StakVault__Invested(address indexed user, uint256 positionId, uint256 assetAmount, uint256 shareAmount);
