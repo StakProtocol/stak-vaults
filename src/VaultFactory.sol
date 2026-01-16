@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {StakVault} from "./StakVault.sol";
@@ -13,19 +13,30 @@ contract VaultFactory {
         string memory symbol,
         address owner,
         address treasury,
+        address redeemableVault,
+        address vestingVault,
         uint256 performanceRate,
         uint256 vestingStart,
         uint256 vestingEnd,
-        uint256 startingPrice,
-        uint256 divestFee
-    ) external returns (address) {
-        // deploy the stak vault
-        address vault = address(
-            new StakVault(IERC20(asset), name, symbol, owner, treasury, performanceRate, vestingStart, vestingEnd, startingPrice, divestFee)
+        uint256 redemptionFee,
+        uint256 maxSlippage
+    ) external returns (address vault) {
+        vault = address(
+            new StakVault(
+                IERC20(asset),
+                name,
+                symbol,
+                owner,
+                treasury,
+                redeemableVault,
+                vestingVault,
+                performanceRate,
+                vestingStart,
+                vestingEnd,
+                redemptionFee,
+                maxSlippage
+            )
         );
-
         emit VaultFactory__VaultCreated(vault);
-
-        return vault;
     }
 }
